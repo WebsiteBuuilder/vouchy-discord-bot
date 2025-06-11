@@ -1,15 +1,19 @@
 {
   "name": "vouchy-bot",
   "version": "1.0.0",
-  "description": "Discord bot for tracking vouch points when users post images and mention providers",
+  "description": "A Discord bot for vouching and points",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "deploy-commands": "node deploy-commands.js",
+    "deploy": "node deploy-commands.js && node index.js",
     "clear-points": "node clear-points.js",
-    "test-persistence": "node test-persistence.js"
+    "test-persistence": "node test-persistence.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [
+    "discord"
+  ],
   "dependencies": {
     "discord.js": "^14.14.1",
     "dotenv": "^16.3.1"
