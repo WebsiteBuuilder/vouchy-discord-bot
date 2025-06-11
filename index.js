@@ -1,117 +1,17 @@
 const { Client, GatewayIntentBits, Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, ChannelType } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
 require('dotenv').config();
 
-// Persistent storage paths
-const dataDir = process.env.DATA_DIR || '/app/data';
-const pointsPath = path.join(dataDir, 'points.json');
-const backupPath = path.join(dataDir, 'points-backup.json');
-const activeGamesPath = path.join(dataDir, 'active-games.json');
-const hotkeysPath = path.join(dataDir, 'hotkeys.json');
+// NEW BULLETPROOF STORAGE SYSTEM
+const storage = require('./storage.js');
 
-// Ensure data directory exists
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-}
+// NEW STORAGE SYSTEM - All data managed by storage.js
+// Legacy variables removed - using storage directly now
 
-let vouchPoints = new Map();
-let blackjackGames = new Map();
-let hotkeys = new Map();
+// LEGACY FUNCTION - Now handled by storage.js
+// Storage is automatically loaded when storage.js is imported
 
-// Function to load vouch points
-function loadPoints() {
-    try {
-        if (fs.existsSync(pointsPath)) {
-            const data = fs.readFileSync(pointsPath, 'utf8');
-            const parsedData = JSON.parse(data);
-            vouchPoints = new Map(Object.entries(parsedData));
-            console.log(`✅ Loaded ${vouchPoints.size} user points from ${pointsPath}`);
-        } else {
-            console.log(`📝 No points file found. Starting fresh.`);
-            fs.writeFileSync(pointsPath, JSON.stringify({}));
-        }
-    } catch (error) {
-        console.error('❌ Error loading points:', error);
-        if (fs.existsSync(backupPath)) {
-            console.log('↩️ Attempting to restore from backup...');
-            const backupData = fs.readFileSync(backupPath, 'utf8');
-            const parsedBackup = JSON.parse(backupData);
-            vouchPoints = new Map(Object.entries(parsedBackup));
-            fs.writeFileSync(pointsPath, backupData);
-            console.log(`✅ Successfully restored ${vouchPoints.size} points from backup.`);
-        }
-    }
-}
-
-// Function to load active blackjack games
-function loadBlackjackGames() {
-    try {
-        if (fs.existsSync(activeGamesPath) && fs.readFileSync(activeGamesPath, 'utf8').length > 0) {
-            const data = fs.readFileSync(activeGamesPath, 'utf8');
-            const gamesArray = JSON.parse(data);
-            blackjackGames = new Map(gamesArray);
-            console.log(`✅ Loaded ${blackjackGames.size} active blackjack games.`);
-        } else {
-            console.log('🤔 No active blackjack games file found, starting fresh.');
-        }
-    } catch (error) {
-        console.error('❌ Error loading active blackjack games:', error);
-    }
-}
-
-// Function to load hotkeys
-function loadHotkeys() {
-    try {
-        if (fs.existsSync(hotkeysPath)) {
-            const data = fs.readFileSync(hotkeysPath, 'utf8');
-            const parsedData = JSON.parse(data);
-            hotkeys = new Map(Object.entries(parsedData));
-            console.log(`✅ Loaded ${hotkeys.size} custom hotkeys from ${hotkeysPath}`);
-        } else {
-            console.log(`📝 No hotkeys file found. Starting fresh.`);
-            fs.writeFileSync(hotkeysPath, JSON.stringify({}));
-        }
-    } catch (error) {
-        console.error('❌ Error loading hotkeys:', error);
-    }
-}
-
-// Function to save vouch points (with backup)
-async function savePoints() {
-    try {
-        const data = JSON.stringify(Object.fromEntries(vouchPoints), null, 2);
-        fs.writeFileSync(pointsPath, data);
-        fs.writeFileSync(backupPath, data);
-    } catch (error) {
-        console.error('❌ Error saving points:', error);
-    }
-}
-
-// Function to save active blackjack games
-async function saveBlackjackGames() {
-    try {
-        const gamesArray = Array.from(blackjackGames.entries());
-        fs.writeFileSync(activeGamesPath, JSON.stringify(gamesArray, null, 2));
-    } catch (error) {
-        console.error('❌ Error saving active blackjack games:', error);
-    }
-}
-
-// Function to save hotkeys
-async function saveHotkeys() {
-    try {
-        const data = JSON.stringify(Object.fromEntries(hotkeys), null, 2);
-        fs.writeFileSync(hotkeysPath, data);
-    } catch (error) {
-        console.error('❌ Error saving hotkeys:', error);
-    }
-}
-
-// Load all data on startup
-loadPoints();
-loadBlackjackGames();
-loadHotkeys();
+// LEGACY FUNCTIONS - Now handled by storage.js
+// All data loading/saving is automatically managed by the storage module
 
 // Handle button interactions for gambling
 // This function is now mostly legacy or for non-blackjack buttons
@@ -187,26 +87,25 @@ function getPotentialPayout(betType, betAmount) {
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`🚀 Ready! Logged in as ${readyClient.user.tag}`);
+  console.log(`🔧 Using ${storage.getStats().environment} storage system`);
+  console.log(`📊 Current data: ${storage.getStats().userCount} users, ${storage.getStats().totalPoints} points`);
 
     // --- AUTOMATIC TEST USER CLEANUP ---
     const usersToRemove = ['test_user_1', 'test_user_2', 'test_user_3'];
     let usersWereRemoved = false;
     usersToRemove.forEach(userId => {
-        if (vouchPoints.has(userId)) {
-            vouchPoints.delete(userId);
+        if (storage.getPoints(userId) > 0) {
+            storage.deleteUser(userId);
             console.log(`🧹 Automatically removed test user: ${userId}`);
             usersWereRemoved = true;
         }
     });
 
     if (usersWereRemoved) {
-        console.log('💾 Saving point changes after cleanup...');
-        await savePoints();
+        console.log('💾 Test users cleaned up automatically');
     }
   
-  // Set up periodic auto-save every 15 seconds
-  setInterval(savePoints, 15000); 
-  console.log(`💾 Auto-save enabled (every 15 seconds)`);
+  console.log(`💾 Storage auto-save is handled by storage.js`);
 });
 
 client.on(Events.MessageCreate, async (message) => {
@@ -288,12 +187,9 @@ client.on(Events.MessageCreate, async (message) => {
 
   // Award point to the author of the message for making a valid vouch
   const authorId = message.author.id;
-  const currentPoints = vouchPoints.get(authorId) || 0;
+  const currentPoints = storage.getPoints(authorId);
   const newPoints = currentPoints + POINTS_PER_VOUCH;
-  vouchPoints.set(authorId, newPoints);
-  
-  // Save points after adding
-  savePoints();
+  storage.setPoints(authorId, newPoints);
   
   // Send confirmation message
   const embed = new EmbedBuilder()
@@ -322,8 +218,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   // --- HOTKEY EXECUTION ---
-  if (hotkeys.has(interaction.commandName)) {
-    const message = hotkeys.get(interaction.commandName);
+  if (storage.getHotkey(interaction.commandName)) {
+    const message = storage.getHotkey(interaction.commandName);
     // Allow for variables like {user} in the message
     const finalMessage = message.replace(/{user}/g, `<@${interaction.user.id}>`);
     return interaction.reply(finalMessage);
@@ -341,7 +237,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   if (interaction.commandName === 'points') {
     const targetUser = interaction.options.getUser('user') || interaction.user;
-    const points = vouchPoints.get(targetUser.id) || 0;
+    const points = storage.getPoints(targetUser.id);
     
     const embed = new EmbedBuilder()
       .setColor(0x0099FF)
@@ -353,7 +249,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   if (interaction.commandName === 'leaderboard') {
-    const sortedPoints = Array.from(vouchPoints.entries())
+    const allPoints = storage.getAllPoints();
+    const sortedPoints = Array.from(allPoints.entries())
       .sort(([,a], [,b]) => b - a)
       .slice(0, 10);
 
@@ -376,8 +273,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       })
       .join('\n');
 
-    const totalPoints = Array.from(vouchPoints.values()).reduce((sum, points) => sum + points, 0);
-    const totalUsers = vouchPoints.size;
+    const stats = storage.getStats();
+    const totalPoints = stats.totalPoints;
+    const totalUsers = stats.userCount;
 
     const embed = new EmbedBuilder()
       .setColor(0xFFD700)
@@ -407,11 +305,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const amount = interaction.options.getInteger('amount');
     const reason = interaction.options.getString('reason') || 'Manual adjustment';
 
-    const currentPoints = vouchPoints.get(targetUser.id) || 0;
+    const currentPoints = storage.getPoints(targetUser.id);
     const newPoints = Math.max(0, currentPoints + amount); // Prevent negative points
     
-    vouchPoints.set(targetUser.id, newPoints);
-    savePoints(); // Save after manual changes
+    storage.setPoints(targetUser.id, newPoints);
 
     const embed = new EmbedBuilder()
       .setColor(amount > 0 ? 0x00FF00 : 0xFF0000)
@@ -441,24 +338,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     try {
-      // Force save points
-      savePoints();
-
-      // Get file stats
-      const stats = fs.existsSync(pointsPath) ? fs.statSync(pointsPath) : null;
-      const backupStats = fs.existsSync(backupPath) ? fs.statSync(backupPath) : null;
+      // Force backup creation
+      const stats = storage.createBackup();
+      const storageDetails = storage.getStats();
 
       const embed = new EmbedBuilder()
         .setColor(0x00FF00)
         .setTitle('💾 Backup & Storage Info')
         .setDescription('Manual backup completed successfully!')
         .addFields(
-          { name: '👥 Total Users', value: `${vouchPoints.size}`, inline: true },
-          { name: '📊 Total Points', value: `${Array.from(vouchPoints.values()).reduce((a, b) => a + b, 0)}`, inline: true },
-          { name: '📁 Storage Path', value: `${dataDir}`, inline: false },
-          { name: '👥 Main File', value: stats ? `✅ ${(stats.size / 1024).toFixed(2)} KB` : '❌ Not found', inline: true },
-          { name: '💾 Backup File', value: backupStats ? `✅ ${(backupStats.size / 1024).toFixed(2)} KB` : '❌ Not found', inline: true },
-          { name: '🕒 Last Modified', value: stats ? `<t:${Math.floor(stats.mtime.getTime() / 1000)}:R>` : 'N/A', inline: true }
+          { name: 'Environment', value: `✅ ${storageDetails.environment}`, inline: false },
+          { name: '👥 Total Users', value: `${storageDetails.userCount}`, inline: true },
+          { name: '💰 Total Points', value: `${storageDetails.totalPoints}`, inline: true },
+          { name: '📁 Storage Path', value: `\`${storageDetails.storageDir}\``, inline: false }
         )
         .setFooter({ text: `Backup requested by ${interaction.user.username}` })
         .setTimestamp();
@@ -487,7 +379,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const numberBet = interaction.options.getInteger('number');
     
     const userId = interaction.user.id;
-    const userPoints = vouchPoints.get(userId) || 0;
+    const userPoints = storage.getPoints(userId);
     
     if (userPoints < betAmount) {
       const embed = new EmbedBuilder()
@@ -581,7 +473,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.commandName === 'blackjack') {
     const betAmount = interaction.options.getInteger('amount');
     const userId = interaction.user.id;
-    const userPoints = vouchPoints.get(userId) || 0;
+    const userPoints = storage.getPoints(userId);
     
     if (userPoints < betAmount) {
       const embed = new EmbedBuilder()
@@ -594,7 +486,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     
-    if (blackjackGames.has(userId)) {
+    if (storage.getGame(userId)) {
       const embed = new EmbedBuilder()
         .setColor(0xFF0000)
         .setTitle('❌ Game in Progress')
@@ -616,7 +508,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const message = interaction.options.getString('message') || '';
     
     const senderId = interaction.user.id;
-    const senderPoints = vouchPoints.get(senderId) || 0;
+    const senderPoints = storage.getPoints(senderId);
     
     // Check if trying to send to themselves
     if (targetUser.id === senderId) {
@@ -643,10 +535,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
     
     // Transfer points
-    const receiverPoints = vouchPoints.get(targetUser.id) || 0;
-    vouchPoints.set(senderId, senderPoints - amount);
-    vouchPoints.set(targetUser.id, receiverPoints + amount);
-    savePoints();
+    const receiverPoints = storage.getPoints(targetUser.id);
+    storage.setPoints(senderId, senderPoints - amount);
+    storage.setPoints(targetUser.id, receiverPoints + amount);
     
     const embed = new EmbedBuilder()
       .setColor(0x00FF00)
@@ -775,13 +666,12 @@ async function playRoulette(message, betAmount, betType) {
   }
   
   // Update points
-  const currentPoints = vouchPoints.get(userId) || 0;
+  const currentPoints = storage.getPoints(userId);
   if (won) {
-    vouchPoints.set(userId, currentPoints - betAmount + payout);
+    storage.setPoints(userId, currentPoints - betAmount + payout);
   } else {
-    vouchPoints.set(userId, currentPoints - betAmount);
+    storage.setPoints(userId, currentPoints - betAmount);
   }
-  savePoints(); // Save after gambling
   
   const embed = new EmbedBuilder()
     .setColor(won ? 0x00FF00 : 0xFF0000)
@@ -790,7 +680,7 @@ async function playRoulette(message, betAmount, betType) {
     .addFields(
       { name: 'Bet Amount', value: `${betAmount} points`, inline: true },
       { name: 'Result', value: won ? `+${payout - betAmount} points` : `-${betAmount} points`, inline: true },
-      { name: 'New Balance', value: `${vouchPoints.get(userId)} points`, inline: true }
+      { name: 'New Balance', value: `${storage.getPoints(userId)} points`, inline: true }
     )
     .setFooter({ text: `${message.author.username}` })
     .setTimestamp();
@@ -979,13 +869,12 @@ async function playRouletteSlash(interaction, betAmount, betType) {
     : `💔 **"${spin} ${numberColor}"** 💔\n\n😤 **HOUSE WINS THIS TIME** \n${resultText}`;
 
   // Update points
-  const currentPoints = vouchPoints.get(userId) || 0;
+  const currentPoints = storage.getPoints(userId);
   if (won) {
-    vouchPoints.set(userId, currentPoints - betAmount + payout);
+    storage.setPoints(userId, currentPoints - betAmount + payout);
   } else {
-    vouchPoints.set(userId, currentPoints - betAmount);
+    storage.setPoints(userId, currentPoints - betAmount);
   }
-  savePoints();
 
   const resultEmbed = new EmbedBuilder()
     .setColor(won ? 0x00FF00 : 0xFF0000)
@@ -995,7 +884,7 @@ async function playRouletteSlash(interaction, betAmount, betType) {
       { name: '🎲 Your Bet', value: `${betAmount} points on **${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}**`, inline: false },
       { name: '🎯 Winning Number', value: `**${numberColor} ${spin}**`, inline: true },
       { name: '💰 Result', value: won ? `**+${payout - betAmount}** points` : `**-${betAmount}** points`, inline: true },
-      { name: '💳 Balance', value: `**${vouchPoints.get(userId)}** points`, inline: true }
+      { name: '💳 Balance', value: `**${storage.getPoints(userId)}** points`, inline: true }
     )
     .setFooter({ 
       text: won 
@@ -1037,7 +926,7 @@ async function playRouletteSlash(interaction, betAmount, betType) {
 async function playBlackjack(message, betAmount) {
   const userId = message.author.id;
   
-  if (blackjackGames.has(userId)) {
+  if (storage.getGame(userId)) {
     return message.reply('❌ You already have a blackjack game in progress! Use `!hit`, `!stand`, or `!quit`');
   }
   
@@ -1054,7 +943,7 @@ async function playBlackjack(message, betAmount) {
     userId
   };
   
-  blackjackGames.set(userId, game);
+  storage.setGame(userId, game);
   
   const playerValue = getHandValue(playerHand);
   
@@ -1085,7 +974,7 @@ async function handleBlackjackButton(interaction, clickerId) {
       return interaction.followUp({ content: 'This is not your game! Start your own with `/bj`.', ephemeral: true });
     }
     
-    const game = blackjackGames.get(gameOwnerId);
+    const game = storage.getGame(gameOwnerId);
     if (!game) {
       return await safeReply(interaction, {
         embeds: [createErrorEmbed('🃏 Game not found!', 'Your blackjack game has expired or was not found. This can happen after 10 minutes of inactivity.')],
@@ -1174,7 +1063,7 @@ async function handleDoubleDown(interaction, game) {
     });
   }
   
-  const userPoints = vouchPoints.get(game.userId) || 0;
+  const userPoints = storage.getPoints(game.userId);
   if (userPoints < game.betAmount) {
     return await safeReply(interaction, {
       embeds: [createErrorEmbed('💰 Insufficient Points', `You need ${game.betAmount} more points to double down!`)],
@@ -1198,8 +1087,7 @@ async function handleDoubleDown(interaction, game) {
 }
 
 async function handleQuit(interaction, game) {
-  blackjackGames.delete(game.userId);
-  await saveBlackjackGames();
+  storage.deleteGame(game.userId);
   
   const embed = new EmbedBuilder()
     .setColor(0xFFD700)
@@ -1241,7 +1129,7 @@ async function endGame(interaction, game, playerWon, reason) {
   }
   
   // Update points
-  const currentPoints = vouchPoints.get(game.userId) || 0;
+  const currentPoints = storage.getPoints(game.userId);
   let newPoints = currentPoints;
   let pointChange = 0;
   
@@ -1253,10 +1141,8 @@ async function endGame(interaction, game, playerWon, reason) {
     newPoints = currentPoints - game.betAmount;
   }
   
-  vouchPoints.set(game.userId, newPoints);
-  savePoints();
-  blackjackGames.delete(game.userId);
-  await saveBlackjackGames();
+  storage.setPoints(game.userId, newPoints);
+  storage.deleteGame(game.userId);
   
   // Create result embed
   const color = playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFD700;
@@ -1316,8 +1202,8 @@ async function playBlackjackSlash(interaction, betAmount) {
   
   try {
     // Clean up any existing game
-    if (blackjackGames.has(userId)) {
-      blackjackGames.delete(userId);
+    if (storage.getGame(userId)) {
+      storage.deleteGame(userId);
     }
     
     // Create fresh deck and deal cards
@@ -1335,8 +1221,7 @@ async function playBlackjackSlash(interaction, betAmount) {
       timestamp: Date.now()
     };
     
-    blackjackGames.set(userId, game);
-    await saveBlackjackGames();
+    storage.setGame(userId, game);
     
     const playerValue = getHandValue(playerHand);
     
@@ -1353,11 +1238,10 @@ async function playBlackjackSlash(interaction, betAmount) {
     
     // Auto-cleanup after 10 minutes
     setTimeout(async () => {
-      const currentGame = blackjackGames.get(userId);
+      const currentGame = storage.getGame(userId);
       // Only delete if the game is still the same one, preventing race conditions
       if (currentGame && currentGame.timestamp === game.timestamp) {
-        blackjackGames.delete(userId);
-        await saveBlackjackGames();
+        storage.deleteGame(userId);
         console.log(`⏰ Timed out and removed blackjack game for user ${userId}`);
       }
     }, 600000);
@@ -1469,7 +1353,7 @@ async function handleBlackjackEnd(message, playerWon, reason) {
   }
   
   // Update points
-  const currentPoints = vouchPoints.get(game.userId) || 0;
+  const currentPoints = storage.getPoints(game.userId);
   let newPoints = currentPoints;
   
   if (playerWon === true) {
@@ -1479,10 +1363,8 @@ async function handleBlackjackEnd(message, playerWon, reason) {
   }
   // If tie (playerWon === null), points stay the same
   
-  vouchPoints.set(game.userId, newPoints);
-  savePoints(); // Save after blackjack
-  blackjackGames.delete(game.userId);
-  await saveBlackjackGames();
+  storage.setPoints(game.userId, newPoints);
+  storage.deleteGame(game.userId);
   
   const embed = new EmbedBuilder()
     .setColor(playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFFF00)
@@ -1568,7 +1450,10 @@ async function handleRecountVouches(interaction) {
     await interaction.editReply({ content: `**Phase 3/4:** ✅ Found ${providerIds.size} providers. Resetting points and starting final count...` });
     
     // --- PASS 2: Recalculate points with the known list of providers ---
-    vouchPoints.clear();
+    // Clear all points in storage
+    const allUsers = Array.from(storage.getAllPoints().keys());
+    allUsers.forEach(userId => storage.deleteUser(userId));
+    
     let processedMessages = 0;
     let foundVouches = 0;
     let totalPointsAwarded = 0;
@@ -1590,8 +1475,8 @@ async function handleRecountVouches(interaction) {
                     
                     if (hasProviderMention) {
                         const authorId = message.author.id;
-                        const currentPoints = vouchPoints.get(authorId) || 0;
-                        vouchPoints.set(authorId, currentPoints + POINTS_PER_VOUCH);
+                        const currentPoints = storage.getPoints(authorId);
+                        storage.setPoints(authorId, currentPoints + POINTS_PER_VOUCH);
                         totalPointsAwarded += POINTS_PER_VOUCH;
                         foundVouches++;
                     }
@@ -1601,7 +1486,7 @@ async function handleRecountVouches(interaction) {
         }
     }
 
-    await savePoints();
+    // Points are automatically saved by storage.js
     await interaction.editReply({ content: `**Phase 4/4:** ✅ Recount complete! Finalizing results...` });
 
     const summaryEmbed = new EmbedBuilder()
@@ -1656,7 +1541,7 @@ async function handleStoreOpen(interaction) {
 
     } catch (error) {
         console.error("Error opening store:", error);
-        await interaction.editReply({ content: '❌ An error occurred while trying to open the store. Please check my permissions.' });
+        await interaction.editReply({ content: '❌ An error occurred while trying to open the store. Please check my permissions (I may need "Manage Channels" and "Manage Roles"). The bot will continue to function otherwise.' });
     }
 }
 
@@ -1695,7 +1580,7 @@ async function handleStoreClose(interaction) {
 
     } catch (error) {
         console.error("Error closing store:", error);
-        await interaction.editReply({ content: '❌ An error occurred while trying to close the store. Please check my permissions.' });
+        await interaction.editReply({ content: '❌ An error occurred while trying to close the store. Please check my permissions (I may need "Manage Channels" and "Manage Roles"). The bot will continue to function otherwise.' });
     }
 }
 
@@ -1711,7 +1596,7 @@ async function updateDiscordCommands(guild) {
     delete require.cache[require.resolve('./deploy-commands.js')]; // Clear cache to get fresh data
     const staticCommands = require('./deploy-commands.js').commands;
 
-    const dynamicCommands = Array.from(hotkeys.entries()).map(([name, message]) => {
+    const dynamicCommands = Array.from(storage.getAllHotkeys().entries()).map(([name, message]) => {
         return new SlashCommandBuilder()
             .setName(name)
             .setDescription(message.length > 100 ? message.substring(0, 97) + '...' : message)
@@ -1752,12 +1637,11 @@ async function handleHotkeyCreate(interaction) {
         });
     }
 
-    if (hotkeys.has(name)) {
+    if (storage.getHotkey(name)) {
         return interaction.reply({ content: `❌ A hotkey named \`/${name}\` already exists. Use a different name or delete the existing one first.`, ephemeral: true });
     }
 
-    hotkeys.set(name, message);
-    await saveHotkeys();
+    storage.setHotkey(name, message);
     await interaction.deferReply({ ephemeral: true });
 
     const success = await updateDiscordCommands(interaction.guild);
@@ -1776,12 +1660,11 @@ async function handleHotkeyDelete(interaction) {
 
     const name = interaction.options.getString('name').toLowerCase();
 
-    if (!hotkeys.has(name)) {
+    if (!storage.getHotkey(name)) {
         return interaction.reply({ content: `❌ No hotkey named \`/${name}\` found.`, ephemeral: true });
     }
 
-    hotkeys.delete(name);
-    await saveHotkeys();
+    storage.deleteHotkey(name);
     await interaction.deferReply({ ephemeral: true });
 
     const success = await updateDiscordCommands(interaction.guild);
@@ -1798,7 +1681,8 @@ async function handleHotkeyList(interaction) {
         return interaction.reply({ content: '❌ You do not have permission for this.', ephemeral: true });
     }
 
-    if (hotkeys.size === 0) {
+    const allHotkeys = storage.getAllHotkeys();
+    if (allHotkeys.size === 0) {
         return interaction.reply({ content: 'ℹ️ You have not created any hotkeys yet. Use `/hotkey-create` to start.', ephemeral: true });
     }
 
@@ -1808,7 +1692,7 @@ async function handleHotkeyList(interaction) {
         .setDescription('Here are all the custom commands you have created.');
 
     let description = '';
-    for (const [name, message] of hotkeys) {
+    for (const [name, message] of allHotkeys) {
         const shortMessage = message.length > 200 ? message.substring(0, 197) + '...' : message;
         description += `**\`/${name}\`**\n>>> ${shortMessage}\n\n`;
     }
