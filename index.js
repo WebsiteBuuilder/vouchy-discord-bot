@@ -866,11 +866,11 @@ async function playRouletteSlash(interaction, betAmount, betType) {
 
   // Create spinning animation
   const spinningFrames = [
-    "🎰 **SPINNING THE WHEEL** 🎰\n```\n    🔴 ⚫ 🔴 ⚫ 🔴\n  ⚫ 🟢   0   🟢 ⚫\n🔴 ⚫ 🔴  🎱  🔴 ⚫ 🔴\n  ⚫ 🟢   0   🟢 ⚫\n    🔴 ⚫ 🔴 ⚫ 🔴\n```\n🌪️ *Wheel spinning...*",
-    "🎰 **SPINNING THE WHEEL** 🎰\n```\n    ⚫ 🔴 ⚫ 🔴 ⚫\n  🔴 🟢   0   🟢 🔴\n⚫ 🔴 ⚫  🎱  ⚫ 🔴 ⚫\n  🔴 🟢   0   🟢 🔴\n    ⚫ 🔴 ⚫ 🔴 ⚫\n```\n🌪️ *Wheel spinning faster...*",
-    "🎰 **SPINNING THE WHEEL** 🎰\n```\n    🔴 ⚫ 🔴 ⚫ 🔴\n  ⚫ 🟢   0   🟢 ⚫\n🔴 ⚫ 🔴  🎱  🔴 ⚫ 🔴\n  ⚫ 🟢   0   🟢 ⚫\n    🔴 ⚫ 🔴 ⚫ 🔴\n```\n🌪️ *Ball bouncing around...*",
-    "🎰 **SPINNING THE WHEEL** 🎰\n```\n    ⚫ 🔴 ⚫ 🔴 ⚫\n  🔴 🟢   0   🟢 🔴\n⚫ 🔴 ⚫  🎱  ⚫ 🔴 ⚫\n  🔴 🟢   0   🟢 🔴\n    ⚫ 🔴 ⚫ 🔴 ⚫\n```\n🎯 *Slowing down...*",
-    "🎰 **SPINNING THE WHEEL** 🎰\n```\n    🔴 ⚫ 🔴 ⚫ 🔴\n  ⚫ 🟢   0   🟢 ⚫\n🔴 ⚫ 🔴  ⚫  🔴 ⚫ 🔴\n  ⚫ 🟢   0   🟢 ⚫\n    🔴 ⚫ 🔴 ⚫ 🔴\n```\n⏰ *Almost there...*"
+    "🎰 **WELCOME TO THE ROULETTE TABLE** 🎰\n```\n╔══════════════════════════════════════════╗\n║          🎯 EUROPEAN ROULETTE 🎯          ║\n║                                          ║\n║    🔴 🟢 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴        ║\n║  ⚫ 🔴 ⚫ 🟢 0 🟢 ⚫ 🔴 ⚫ 🔴 ⚫      ║\n║    🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫        ║\n║                                          ║\n║              🎲 SPINNING 🎲               ║\n╚══════════════════════════════════════════╝\n```\n⏰ *Croupier is spinning the wheel...*",
+    "🎰 **ROULETTE WHEEL IN MOTION** 🎰\n```\n╔══════════════════════════════════════════╗\n║          🎯 EUROPEAN ROULETTE 🎯          ║\n║                                          ║\n║    ⚫ 🔴 ⚫ 🔴 ⚫ 🟢 🔴 ⚫ 🔴 ⚫        ║\n║  🔴 ⚫ 🔴 ⚫ 🎱 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴      ║\n║    ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴        ║\n║                                          ║\n║         🌪️ WHEEL SPINNING FAST 🌪️        ║\n╚══════════════════════════════════════════╝\n```\n🎰 *Ball is bouncing around the wheel...*",
+    "🎰 **BALL FINDING ITS DESTINY** 🎰\n```\n╔══════════════════════════════════════════╗\n║          🎯 EUROPEAN ROULETTE 🎯          ║\n║                                          ║\n║    🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 🟢 ⚫ 🔴        ║\n║  ⚫ 🔴 ⚫ 🔴 ⚫ 🎱 🔴 ⚫ 🔴 ⚫ 🔴      ║\n║    🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫        ║\n║                                          ║\n║        🎯 BALL SLOWING DOWN 🎯           ║\n╚══════════════════════════════════════════╝\n```\n⏳ *The suspense is building...*",
+    "🎰 **THE MOMENT OF TRUTH** 🎰\n```\n╔══════════════════════════════════════════╗\n║          🎯 EUROPEAN ROULETTE 🎯          ║\n║                                          ║\n║    ⚫ 🔴 ⚫ 🟢 🔴 ⚫ 🔴 ⚫ 🔴 ⚫        ║\n║  🔴 ⚫ 🔴 ⚫ 🔴 🎱 ⚫ 🔴 ⚫ 🔴 ⚫      ║\n║    ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴        ║\n║                                          ║\n║           ⭐ FINAL SECONDS ⭐            ║\n╚══════════════════════════════════════════╝\n```\n🎯 *Ball is about to settle...*",
+    "🎰 **WHEEL IS STOPPING** 🎰\n```\n╔══════════════════════════════════════════╗\n║          🎯 EUROPEAN ROULETTE 🎯          ║\n║                                          ║\n║    🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🟢 🔴 ⚫ 🔴        ║\n║  ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🎱 🔴 ⚫ 🔴      ║\n║    🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫        ║\n║                                          ║\n║              🕰️ FINAL MOMENT 🕰️           ║\n╚══════════════════════════════════════════╝\n```\n🔥 *Here we go...*"
   ];
 
   // Start spinning animation
@@ -906,6 +906,23 @@ async function playRouletteSlash(interaction, betAmount, betType) {
     `🎯 **BALL LANDED ON: ${numberColor} ${spin}** 🎯\n\n` +
     `${won ? '🎉 **WINNER!** 🎉' : '💔 **BETTER LUCK NEXT TIME!** 💔'}`;
 
+  const rouletteTable = 
+    "```\n" +
+    "╔═══════════════ ROULETTE RESULT ═══════════════╗\n" +
+    "║                                               ║\n" +
+    `║               WINNING NUMBER: ${spin.toString().padStart(2, ' ')}              ║\n` +
+    `║                   ${numberColor} ${numberColor} ${numberColor}                   ║\n` +
+    "║                                               ║\n" +
+    "║  RED NUMBERS:                                 ║\n" +
+    "║  1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36 ║\n" +
+    "║                                               ║\n" +
+    "║  BLACK NUMBERS:                               ║\n" +
+    "║  2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35║\n" +
+    "║                                               ║\n" +
+    "║  GREEN NUMBER: 0 (House Edge)                 ║\n" +
+    "╚═══════════════════════════════════════════════╝\n" +
+    "```";
+
   // Update points
   const currentPoints = vouchPoints.get(userId) || 0;
   if (won) {
@@ -918,14 +935,14 @@ async function playRouletteSlash(interaction, betAmount, betType) {
   const finalEmbed = new EmbedBuilder()
     .setColor(won ? 0x00FF00 : 0xFF0000)
     .setTitle('🎰 Roulette Results')
-    .setDescription(wheelResult)
+    .setDescription(wheelResult + '\n\n' + rouletteTable)
     .addFields(
-      { name: 'Result', value: resultText, inline: false },
-      { name: 'Bet Amount', value: `${betAmount} points`, inline: true },
+      { name: 'Your Bet', value: `${betAmount} points on ${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}`, inline: false },
+      { name: 'Winning Number', value: `${numberColor} ${spin}`, inline: true },
       { name: 'Payout', value: won ? `+${payout - betAmount} points` : `-${betAmount} points`, inline: true },
       { name: 'New Balance', value: `${vouchPoints.get(userId)} points`, inline: true }
     )
-    .setFooter({ text: `${interaction.user.username} | ${won ? 'Congratulations!' : 'Try again!'}` })
+    .setFooter({ text: `${interaction.user.username} | ${won ? 'Congratulations! 🎉' : 'Try again! 🎲'}` })
     .setTimestamp();
 
   await interaction.editReply({ embeds: [finalEmbed] });
@@ -1058,6 +1075,10 @@ async function playBlackjackSlash(interaction, betAmount) {
         .setLabel('✋ I Stand')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
+        .setCustomId('blackjack_double')
+        .setLabel('⬆️ Double Down')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
         .setCustomId('blackjack_quit')
         .setLabel('❌ Fold')
         .setStyle(ButtonStyle.Danger)
@@ -1066,13 +1087,12 @@ async function playBlackjackSlash(interaction, betAmount) {
   await interaction.editReply({ embeds: [embed], components: [row] });
   
   // Set up button collector with enhanced feedback
-  const collector = interaction.message.createMessageComponentCollector({ time: 300000 });
+  const collector = interaction.channel.createMessageComponentCollector({ 
+    filter: i => i.user.id === userId && ['blackjack_hit', 'blackjack_stand', 'blackjack_double', 'blackjack_quit'].includes(i.customId),
+    time: 300000 
+  });
   
   collector.on('collect', async i => {
-    if (i.user.id !== userId) {
-      return i.reply({ content: 'This is not your game!', ephemeral: true });
-    }
-    
     const currentGame = blackjackGames.get(userId);
     if (!currentGame) {
       return i.reply({ content: 'Game not found!', ephemeral: true });
@@ -1101,7 +1121,7 @@ async function playBlackjackSlash(interaction, betAmount) {
           .addFields(
             { name: 'Your Hand', value: createAnimatedHand(currentGame.playerHand, true), inline: false },
             { name: 'Total', value: `${playerValue} (BUST)`, inline: true },
-            { name: 'Result', value: `-${betAmount} points`, inline: true }
+            { name: 'Result', value: `-${currentGame.betAmount} points`, inline: true }
           )
           .setTimestamp();
 
@@ -1136,11 +1156,72 @@ async function playBlackjackSlash(interaction, betAmount) {
               .setLabel('✋ I Stand')
               .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
+              .setCustomId('blackjack_double')
+              .setLabel('⬆️ Double Down')
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
               .setCustomId('blackjack_quit')
               .setLabel('❌ Fold')
               .setStyle(ButtonStyle.Danger)
           );
         await i.editReply({ embeds: [embed], components: [row] });
+      }
+    } else if (i.customId === 'blackjack_double') {
+      // Double Down - double bet, get one card, auto stand
+      const currentPoints = vouchPoints.get(userId) || 0;
+      if (currentPoints < currentGame.betAmount) {
+        return i.reply({ content: '❌ Not enough points to double down!', ephemeral: true });
+      }
+
+      currentGame.betAmount *= 2; // Double the bet
+      
+      const doubleEmbed = new EmbedBuilder()
+        .setColor(0xFFD700)
+        .setTitle('⬆️ DOUBLE DOWN!')
+        .setDescription('🎴 **DOUBLING YOUR BET** 🎴\n\n💰 *Bet doubled! Drawing one final card...*')
+        .addFields(
+          { name: 'New Bet Amount', value: `${currentGame.betAmount} points`, inline: true },
+          { name: 'Risk Level', value: 'HIGH STAKES! 🔥', inline: true }
+        )
+        .setTimestamp();
+
+      await i.update({ embeds: [doubleEmbed], components: [] });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Draw exactly one card
+      currentGame.playerHand.push(drawCard(currentGame.deck));
+      const playerValue = getHandValue(currentGame.playerHand);
+      
+      if (playerValue > 21) {
+        const bustEmbed = new EmbedBuilder()
+          .setColor(0xFF0000)
+          .setTitle('💥 DOUBLE DOWN BUST! 💥')
+          .setDescription('🃏 **DOUBLE DOWN BACKFIRED!** 🃏\n\n💔 **BUSTED WITH DOUBLE BET!** 💔\n\n😱 *That was expensive!*')
+          .addFields(
+            { name: 'Your Hand', value: createAnimatedHand(currentGame.playerHand, true), inline: false },
+            { name: 'Total', value: `${playerValue} (BUST)`, inline: true },
+            { name: 'Lost', value: `-${currentGame.betAmount} points`, inline: true }
+          )
+          .setTimestamp();
+
+        await i.editReply({ embeds: [bustEmbed], components: [] });
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await handleBlackjackEndSlash(i, false, 'Double Down Bust!');
+      } else {
+        const doubleStandEmbed = new EmbedBuilder()
+          .setColor(0x0099FF)
+          .setTitle('⬆️ Double Down Complete!')
+          .setDescription('🃏 **ONE CARD DRAWN - AUTO STAND** 🃏\n\n🎭 **DEALER\'S TURN** 🎭\n\n⏰ *High stakes showdown...*')
+          .addFields(
+            { name: 'Your Final Hand', value: createAnimatedHand(currentGame.playerHand, true), inline: false },
+            { name: 'Your Total', value: `${playerValue}`, inline: true },
+            { name: 'Doubled Bet', value: `${currentGame.betAmount} points`, inline: true }
+          )
+          .setTimestamp();
+
+        await i.editReply({ embeds: [doubleStandEmbed], components: [] });
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await handleBlackjackEndSlash(i, null, 'Double down complete! Dealer\'s turn...');
       }
     } else if (i.customId === 'blackjack_stand') {
       const standEmbed = new EmbedBuilder()
