@@ -961,7 +961,7 @@ async function playRoulette(message, betAmount, betType) {
   message.reply({ embeds: [embed] });
 }
 
-// ENHANCED CINEMATIC ROULETTE with immersive casino experience
+// REALISTIC PHYSICS-BASED ROULETTE - Authentic casino experience
 async function playRouletteSlash(interaction, betAmount, betType) {
   const userId = interaction.user.id;
   
@@ -996,206 +996,149 @@ async function playRouletteSlash(interaction, betAmount, betType) {
     resultText = `You lost! The ball landed on ${spin} (${isGreen ? '🟢 Green' : isRed ? '🔴 Red' : '⚫ Black'})`;
   }
 
-  // STAGE 1: Welcome to Monte Carlo Casino
-  const welcomeEmbed = new EmbedBuilder()
-    .setColor(0xFFD700)
-    .setTitle('🏛️ WELCOME TO MONTE CARLO CASINO 🏛️')
+  // STAGE 1: Authentic Casino Setup
+  const setupEmbed = new EmbedBuilder()
+    .setColor(0x8B0000)
+    .setTitle('🎰 AUTHENTIC EUROPEAN ROULETTE 🎰')
     .setDescription('```\n' +
-      '╔═══════════════════════════════════════════════════════╗\n' +
-      '║        🎩 EUROPÉAN ROULETTE TABLE 🎩                 ║\n' +
-      '║                                                       ║\n' +
-      '║     🍾 Premium Gaming Experience 🍾                   ║\n' +
-      '║                                                       ║\n' +
-      '║   ✨ Your bet has been placed at our finest table ✨  ║\n' +
-      '║                                                       ║\n' +
-      '║           🎲 Preparing the wheel... 🎲                ║\n' +
-      '╚═══════════════════════════════════════════════════════╝\n' +
+      '╔════════════════════════════════════════════════╗\n' +
+      '║  🎩 CROUPIER: "Place your bets, ladies and     ║\n' +
+      '║               gentlemen!"                      ║\n' +
+      '║                                                ║\n' +
+      '║     🎯 Professional Casino Grade Wheel         ║\n' +
+      '║     ⚡ Precision Swiss Bearings                ║\n' +
+      '║     🏆 Authentic European Layout               ║\n' +
+      '╚════════════════════════════════════════════════╝\n' +
       '```\n' +
-      '🥂 **The croupier approaches your table with elegance**')
+      '🥂 *The croupier spins the wheel counter-clockwise...*')
     .addFields(
-      { name: '💰 Your Wager', value: `${betAmount} points on **${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}**`, inline: true },
-      { name: '🎯 Table Minimum', value: '1 point', inline: true },
-      { name: '💎 VIP Status', value: 'High Roller', inline: true }
-    )
-    .setFooter({ text: '🎰 Monte Carlo Casino • Where legends are born' })
-    .setTimestamp();
-
-  await interaction.update({ embeds: [welcomeEmbed], components: [] });
-  await new Promise(resolve => setTimeout(resolve, 2500));
-
-  // STAGE 2: Croupier announces the game
-  const announcementEmbed = new EmbedBuilder()
-    .setColor(0x0099FF)
-    .setTitle('🎭 CROUPIER ANNOUNCEMENT 🎭')
-    .setDescription('```\n' +
-      '╔══════════════════════════════════════════════════════╗\n' +
-      '║                                                      ║\n' +
-      '║  🎩 "Ladies and gentlemen, place your bets!"        ║\n' +
-      '║                                                      ║\n' +
-      '║     🎯 All bets are now locked in                    ║\n' +
-      '║                                                      ║\n' +
-      '║     🌟 The wheel will now begin spinning...          ║\n' +
-      '║                                                      ║\n' +
-      '║  🍀 "Rien ne va plus!" - No more bets! 🍀          ║\n' +
-      '╚══════════════════════════════════════════════════════╝\n' +
-      '```\n' +
-      '🎪 **The atmosphere becomes electric as anticipation builds**')
-    .addFields(
-      { name: '🎲 Your Bet', value: `${betAmount} points on **${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}**`, inline: false },
-      { name: '⚡ Tension Level', value: '████████████ MAX', inline: true },
-      { name: '🎯 Lucky Number?', value: 'About to find out...', inline: true }
+      { name: '🎲 Your Bet', value: `**${betAmount}** points on **${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}**`, inline: true },
+      { name: '🎯 Odds', value: betType === 'number' ? '35:1' : betType === 'green' ? '14:1' : '2:1', inline: true },
+      { name: '🍀 Status', value: 'Bet Locked In', inline: true }
     )
     .setTimestamp();
 
-  await interaction.editReply({ embeds: [announcementEmbed] });
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  await interaction.update({ embeds: [setupEmbed], components: [] });
+  await new Promise(resolve => setTimeout(resolve, 1500));
 
-  // STAGE 3: Enhanced spinning sequence with 6 frames
-  const spinningSequence = [
+  // STAGE 2: Realistic Wheel Physics Simulation
+  const wheelPhases = [
     {
-      title: '🌪️ WHEEL SPINNING - STAGE 1 🌪️',
-      description: '```\n' +
-        '╔══════════════ ROULETTE WHEEL ══════════════╗\n' +
-        '║                                            ║\n' +
-        '║    🔴 ⚫ 🔴 ⚫ 🟢 ⚫ 🔴 ⚫ 🔴 ⚫           ║\n' +
-        '║  ⚫ 🔴 ⚫ 🔴 ⚫ 🎱 ⚫ 🔴 ⚫ 🔴 ⚫         ║\n' +
-        '║    🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫           ║\n' +
-        '║                                            ║\n' +
-        '║         💨 WHEEL GAINING SPEED 💨           ║\n' +
-        '╚════════════════════════════════════════════╝\n' +
-        '```\n🎰 *The wheel starts to turn with mechanical precision*',
-      status: 'Starting rotation...'
+      title: '🌪️ WHEEL ACCELERATION',
+      wheel: '```\n' +
+        '    ╭─────────────────────────────────────╮\n' +
+        '  ╱ 26 🟢 0 🔴 32 ⚫ 15 🔴 19 ⚫ 4 🔴 21 ╲\n' +
+        ' │ ⚫ 2 🔴 25 ⚫ 17 🔴 34 ⚫ 6 🔴 27     │\n' +
+        ' │   ⚫ 13 🔴 36 ⚫ 11 🔴 30 ⚫ 8       │\n' +
+        ' │     🔴 23 ⚫ 10 🔴 5 ⚫ 24 🔴 16     │\n' +
+        ' │       ⚫ 33 🔴 1 ⚫ 20 🔴 14 ⚫     │\n' +
+        ' │         🔴 31 ⚫ 9 🔴 22 ⚫ 18       │\n' +
+        '  ╲ 🔴 29 ⚫ 7 🔴 28 ⚫ 12 🔴 35 ⚫ 3  ╱\n' +
+        '    ╰─────────────────────────────────────╯\n' +
+        '           🎱 Ball starting to move...\n' +
+        '```',
+      speed: '⚡ Accelerating... (15 RPM)',
+      sound: '*whirr... click click click...*'
     },
     {
-      title: '⚡ WHEEL SPINNING - STAGE 2 ⚡',
-      description: '```\n' +
-        '╔══════════════ ROULETTE WHEEL ══════════════╗\n' +
-        '║                                            ║\n' +
-        '║    ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🟢 ⚫ 🔴           ║\n' +
-        '║  🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🎱 ⚫ 🔴 ⚫ 🔴         ║\n' +
-        '║    ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴           ║\n' +
-        '║                                            ║\n' +
-        '║        🌪️ SPINNING FASTER 🌪️               ║\n' +
-        '╚════════════════════════════════════════════╝\n' +
-        '```\n🎪 *The ball dances along the edge of the wheel*',
-      status: 'Accelerating...'
+      title: '🚀 PEAK VELOCITY',
+      wheel: '```\n' +
+        '    ╭─────────────────────────────────────╮\n' +
+        '  ╱ 🔴 ⚫ 🟢 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ╲\n' +
+        ' │ [SPINNING TOO FAST TO READ NUMBERS] │\n' +
+        ' │ ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴   │\n' +
+        ' │   🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴     │\n' +
+        ' │     ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴     │\n' +
+        ' │       🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴       │\n' +
+        '  ╲ ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴  ╱\n' +
+        '    ╰─────────────────────────────────────╯\n' +
+        '              🎱 Ball flying fast!\n' +
+        '```',
+      speed: '🚀 Maximum Speed (45 RPM)',
+      sound: '*WHIRRRRRRR... rapid clicking...*'
     },
     {
-      title: '🔥 WHEEL SPINNING - STAGE 3 🔥',
-      description: '```\n' +
-        '╔══════════════ ROULETTE WHEEL ══════════════╗\n' +
-        '║                                            ║\n' +
-        '║    🔴 ⚫ 🟢 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫           ║\n' +
-        '║  ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🎱 ⚫ 🔴 ⚫         ║\n' +
-        '║    🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫           ║\n' +
-        '║                                            ║\n' +
-        '║         🚀 MAXIMUM VELOCITY 🚀              ║\n' +
-        '╚════════════════════════════════════════════╝\n' +
-        '```\n💫 *The wheel becomes a blur of colors and numbers*',
-      status: 'Peak speed reached!'
-    },
-    {
-      title: '⏳ WHEEL SPINNING - STAGE 4 ⏳',
-      description: '```\n' +
-        '╔══════════════ ROULETTE WHEEL ══════════════╗\n' +
-        '║                                            ║\n' +
-        '║    ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🟢           ║\n' +
-        '║  🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🎱 ⚫ 🔴         ║\n' +
-        '║    ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴           ║\n' +
-        '║                                            ║\n' +
-        '║          🕰️ SLOWING DOWN 🕰️                ║\n' +
-        '╚════════════════════════════════════════════╝\n' +
-        '```\n⚰️ *The ball begins to lose momentum and bounce*',
-      status: 'Deceleration phase...'
-    },
-    {
-      title: '🎯 WHEEL SPINNING - FINAL MOMENTS 🎯',
-      description: '```\n' +
-        '╔══════════════ ROULETTE WHEEL ══════════════╗\n' +
-        '║                                            ║\n' +
-        '║    🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫           ║\n' +
-        '║  ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🎱 ⚫         ║\n' +
-        '║    🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫           ║\n' +
-        '║                                            ║\n' +
-        '║        🎪 SETTLING DOWN 🎪                  ║\n' +
-        '╚════════════════════════════════════════════╝\n' +
-        '```\n💥 *The final clicks echo through the casino*',
-      status: 'Almost stopped...'
+      title: '⏳ DECELERATION PHASE',
+      wheel: '```\n' +
+        '    ╭─────────────────────────────────────╮\n' +
+        '  ╱ 26 🟢 0 🔴 32 ⚫ 15 🔴 19 ⚫ 4 🔴 21 ╲\n' +
+        ' │ ⚫ 2 🔴 25 ⚫ 17 🔴 34 ⚫ 6 🔴 27     │\n' +
+        ' │   ⚫ 13 🔴 36 ⚫ 11 🔴 30 ⚫ 8       │\n' +
+        ' │     🔴 23 ⚫ 10 🔴 5 ⚫ 24 🔴 16     │\n' +
+        ' │       ⚫ 33 🔴 1 ⚫ 20 🔴 14 ⚫     │\n' +
+        ' │         🔴 31 ⚫ 9 🔴 22 ⚫ 18       │\n' +
+        '  ╲ 🔴 29 ⚫ 7 🔴 28 ⚫ 12 🔴 35 ⚫ 3  ╱\n' +
+        '    ╰─────────────────────────────────────╯\n' +
+        '        🎱 Ball losing momentum...\n' +
+        '```',
+      speed: '⏳ Slowing Down... (8 RPM)',
+      sound: '*click... click... click...*'
     }
   ];
 
-  // Animate the spinning sequence
-  for (let i = 0; i < spinningSequence.length; i++) {
-    const frame = spinningSequence[i];
-    const spinEmbed = new EmbedBuilder()
-      .setColor(0xFF6B35)
-      .setTitle(frame.title)
-      .setDescription(frame.description)
+  // Animate realistic wheel physics
+  for (let i = 0; i < wheelPhases.length; i++) {
+    const phase = wheelPhases[i];
+    const physicsEmbed = new EmbedBuilder()
+      .setColor(0xFF4500)
+      .setTitle(phase.title)
+      .setDescription(phase.wheel)
       .addFields(
         { name: '🎲 Your Bet', value: `${betAmount} points on **${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}**`, inline: true },
-        { name: '🌟 Status', value: frame.status, inline: true },
-        { name: '⚡ Excitement', value: '████████████ MAXIMUM', inline: true }
+        { name: '⚡ Wheel Speed', value: phase.speed, inline: true },
+        { name: '🔊 Casino Sounds', value: phase.sound, inline: true }
       )
-      .setFooter({ text: `🎰 Spin Progress: ${i + 1}/${spinningSequence.length} • The tension is unbearable!` })
+      .setFooter({ text: `🎰 Physics Simulation • Ball trajectory calculated in real-time` })
       .setTimestamp();
 
-    await interaction.editReply({ embeds: [spinEmbed] });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await interaction.editReply({ embeds: [physicsEmbed] });
+    await new Promise(resolve => setTimeout(resolve, 800));
   }
 
-  // STAGE 4: Dramatic pause and anticipation
-  const suspenseEmbed = new EmbedBuilder()
+  // STAGE 3: Final Moments - Ball Settling
+  const numberColor = isGreen ? '🟢' : isRed ? '🔴' : '⚫';
+  const finalMomentsEmbed = new EmbedBuilder()
     .setColor(0xFFD700)
-    .setTitle('⚡ MOMENT OF TRUTH ⚡')
+    .setTitle('🎯 FINAL MOMENTS')
     .setDescription('```\n' +
-      '╔═══════════════════════════════════════════════════╗\n' +
-      '║                                                   ║\n' +
-      '║           🤫 Complete Silence Falls...            ║\n' +
-      '║                                                   ║\n' +
-      '║               ⏰ The wheel stops ⏰                ║\n' +
-      '║                                                   ║\n' +
-      '║             🎭 The croupier leans in...           ║\n' +
-      '║                                                   ║\n' +
-      '║         💥 THE RESULT WILL BE REVEALED 💥         ║\n' +
-      '╚═══════════════════════════════════════════════════╝\n' +
+      '    ╭─────────────────────────────────────╮\n' +
+      '  ╱ 26 🟢 0 🔴 32 ⚫ 15 🔴 19 ⚫ 4 🔴 21 ╲\n' +
+      ' │ ⚫ 2 🔴 25 ⚫ 17 🔴 34 ⚫ 6 🔴 27     │\n' +
+      ' │   ⚫ 13 🔴 36 ⚫ 11 🔴 30 ⚫ 8       │\n' +
+      ' │     🔴 23 ⚫ 10 🔴 5 ⚫ 24 🔴 16     │\n' +
+      ' │       ⚫ 33 🔴 1 ⚫ 20 🔴 14 ⚫     │\n' +
+      ' │         🔴 31 ⚫ 9 🔴 22 ⚫ 18       │\n' +
+      '  ╲ 🔴 29 ⚫ 7 🔴 28 ⚫ 12 🔴 35 ⚫ 3  ╱\n' +
+      '    ╰─────────────────────────────────────╯\n' +
+      '           🎱 Ball bouncing... settling...\n' +
       '```\n' +
-      '🔥 **Every eye in the casino is watching your table...**')
+      '🔥 **The wheel is almost stopped... ball bouncing between pockets...**')
     .addFields(
-      { name: '🎯 Winning Number', value: '🤐 **CLASSIFIED**', inline: true },
-      { name: '💰 Your Fate', value: '⏳ **PENDING**', inline: true },
-      { name: '🍀 Luck Factor', value: '🌟 **LEGENDARY**', inline: true }
+      { name: '⚡ Wheel Speed', value: '⏳ Nearly stopped (1 RPM)', inline: true },
+      { name: '🎱 Ball Status', value: 'Bouncing between pockets', inline: true },
+      { name: '💭 Tension', value: '████████████ MAXIMUM', inline: true }
     )
-    .setFooter({ text: '🎪 The most dramatic moment in casino history...' })
     .setTimestamp();
 
-  await interaction.editReply({ embeds: [suspenseEmbed] });
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  await interaction.editReply({ embeds: [finalMomentsEmbed] });
+  await new Promise(resolve => setTimeout(resolve, 1200));
 
-  // STAGE 5: Spectacular result reveal
-  const numberColor = isGreen ? '🟢' : isRed ? '🔴' : '⚫';
-  const winStatus = won ? '🎊 WINNER! 🎊' : '💔 SO CLOSE! 💔';
-  const resultDescription = won 
-    ? `🎆 **INCREDIBLE! YOU'VE WON!** 🎆\n\n🏆 The ball has landed in your favor! 🏆\n\n${resultText}`
-    : `😤 **UNLUCKY THIS TIME!** 😤\n\n💪 You played with courage and style! 💪\n\n${resultText}`;
+  // STAGE 4: Dramatic Result with Authentic Layout
+  const realRouletteWheel = `
+    ╭─────────────────────────────────────╮
+  ╱ 26 🟢 0 🔴 32 ⚫ 15 🔴 19 ⚫ 4 🔴 21 ╲
+ │ ⚫ 2 🔴 25 ⚫ 17 🔴 34 ⚫ 6 🔴 27     │
+ │   ⚫ 13 🔴 36 ⚫ 11 🔴 30 ⚫ 8       │
+ │     🔴 23 ⚫ 10 🔴 5 ⚫ 24 🔴 16     │
+ │       ⚫ 33 🔴 1 ⚫ 20 🔴 14 ⚫     │
+ │         🔴 31 ⚫ 9 🔴 22 ⚫ 18       │
+  ╲ 🔴 29 ⚫ 7 🔴 28 ⚫ 12 🔴 35 ⚫ 3  ╱
+    ╰─────────────────────────────────────╯
+            🎱 LANDED ON: ${numberColor} ${spin}`;
 
-  const rouletteBoard = 
-    '```\n' +
-    '╔══════════════ FINAL ROULETTE BOARD ═══════════════╗\n' +
-    '║                                                   ║\n' +
-    `║           🎯 WINNING NUMBER: ${spin.toString().padStart(2, ' ')} 🎯            ║\n` +
-    `║                  ${numberColor} ${numberColor} ${numberColor}                   ║\n` +
-    '║                                                   ║\n' +
-    '║  🔴 RED NUMBERS (2:1 payout):                     ║\n' +
-    '║  1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36 ║\n' +
-    '║                                                   ║\n' +
-    '║  ⚫ BLACK NUMBERS (2:1 payout):                   ║\n' +
-    '║  2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35║\n' +
-    '║                                                   ║\n' +
-    '║  🟢 GREEN NUMBER (14:1 payout): 0                 ║\n' +
-    '║                                                   ║\n' +
-    '║  🎯 SINGLE NUMBER BET (35:1 payout): Any 0-36     ║\n' +
-    '╚═══════════════════════════════════════════════════╝\n' +
-    '```';
+  const winnerAnnouncement = won 
+    ? `🎊 **"${spin} ${numberColor} WINS!"** 🎊\n\n🏆 **CONGRATULATIONS!** 🏆\n${resultText}`
+    : `💔 **"${spin} ${numberColor}"** 💔\n\n😤 **HOUSE WINS THIS TIME** \n${resultText}`;
 
   // Update points
   const currentPoints = vouchPoints.get(userId) || 0;
@@ -1206,49 +1149,46 @@ async function playRouletteSlash(interaction, betAmount, betType) {
   }
   savePoints();
 
-  const finalEmbed = new EmbedBuilder()
-    .setColor(won ? 0x00FF00 : 0xFF4500)
-    .setTitle(`🎰 ${winStatus} 🎰`)
-    .setDescription(resultDescription + '\n\n' + rouletteBoard)
+  const resultEmbed = new EmbedBuilder()
+    .setColor(won ? 0x00FF00 : 0xFF0000)
+    .setTitle('🎰 RESULT ANNOUNCEMENT 🎰')
+    .setDescription('```' + realRouletteWheel + '```\n\n' + winnerAnnouncement)
     .addFields(
       { name: '🎲 Your Bet', value: `${betAmount} points on **${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}**`, inline: false },
-      { name: '🎯 Winning Number', value: `${numberColor} **${spin}** ${numberColor}`, inline: true },
-      { name: '💰 Payout', value: won ? `**+${payout - betAmount}** points` : `**-${betAmount}** points`, inline: true },
-      { name: '🏦 New Balance', value: `**${vouchPoints.get(userId)}** points`, inline: true }
+      { name: '🎯 Winning Number', value: `**${numberColor} ${spin}**`, inline: true },
+      { name: '💰 Result', value: won ? `**+${payout - betAmount}** points` : `**-${betAmount}** points`, inline: true },
+      { name: '💳 Balance', value: `**${vouchPoints.get(userId)}** points`, inline: true }
     )
     .setFooter({ 
       text: won 
-        ? `🎊 ${interaction.user.username} • Congratulations, high roller! The casino salutes you! 🎊`
-        : `🎲 ${interaction.user.username} • Thank you for playing at Monte Carlo Casino! 🎲` 
+        ? `🎊 ${interaction.user.username} • The house congratulates you!`
+        : `🎰 ${interaction.user.username} • Thank you for playing authentic roulette!` 
     })
     .setTimestamp();
 
-  await interaction.editReply({ embeds: [finalEmbed] });
+  await interaction.editReply({ embeds: [resultEmbed] });
 
-  // STAGE 6: Celebration or consolation message
-  if (won) {
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  // BONUS: Winner celebration (only for big wins)
+  if (won && (payout - betAmount) >= 50) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
     
-    const celebrationEmbed = new EmbedBuilder()
+    const bigWinEmbed = new EmbedBuilder()
       .setColor(0xFFD700)
-      .setTitle('🎊 CASINO CELEBRATION 🎊')
+      .setTitle('🎊 BIG WINNER! 🎊')
       .setDescription('```\n' +
-        '╔═══════════════════════════════════════════════════╗\n' +
-        '║                                                   ║\n' +
-        '║    🍾 The house sends complimentary champagne! 🍾  ║\n' +
-        '║                                                   ║\n' +
-        '║        🎺 The casino band plays in your honor!     ║\n' +
-        '║                                                   ║\n' +
-        '║      🏆 You are now a VIP member of our club! 🏆   ║\n' +
-        '║                                                   ║\n' +
-        '║        💎 Your legend will be remembered! 💎       ║\n' +
-        '╚═══════════════════════════════════════════════════╝\n' +
+        '╔════════════════════════════════════════════════╗\n' +
+        '║                                                ║\n' +
+        '║      🍾 CHAMPAGNE SERVICE! 🍾                  ║\n' +
+        '║                                                ║\n' +
+        '║    🎺 The house band plays a victory march!    ║\n' +
+        '║                                                ║\n' +
+        '║      🏆 You are a true high roller! 🏆        ║\n' +
+        '╚════════════════════════════════════════════════╝\n' +
         '```\n' +
-        `🥂 **Congratulations! Your ${payout - betAmount} point win is absolutely spectacular!**`)
-      .setFooter({ text: '🎰 Monte Carlo Casino • Where dreams come true' })
+        `🥂 **Your ${payout - betAmount} point win is spectacular!**`)
       .setTimestamp();
 
-    await interaction.followUp({ embeds: [celebrationEmbed], ephemeral: false });
+    await interaction.followUp({ embeds: [bigWinEmbed] });
   }
 }
 
