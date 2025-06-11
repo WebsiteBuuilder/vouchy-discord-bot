@@ -625,6 +625,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     console.log(`${interaction.user.username} sent ${amount} points to ${targetUser.username}`);
   }
 
+  if (interaction.commandName === 'recount-vouches') {
+    return await handleRecountVouches(interaction);
+  }
+
   if (interaction.commandName === 'remove-user') {
     // This command is no longer needed due to automatic cleanup
     return interaction.reply({ content: 'This command is deprecated.', ephemeral: true });
@@ -1430,6 +1434,89 @@ async function handleBlackjackEnd(message, playerWon, reason) {
   
   await message.edit({ embeds: [embed] });
   message.reactions.removeAll();
+}
+
+// --- VOUCH RECOUNT COMMAND ---
+async function handleRecountVouches(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You do not have permission to use this command.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const guild = interaction.guild;
+    const providerRole = guild.roles.cache.find(role => role.name.toLowerCase() === PROVIDER_ROLE_NAME.toLowerCase());
+
+    if (!providerRole) {
+        return safeReply(interaction, { content: `❌ Provider role "${PROVIDER_ROLE_NAME}" not found. Cannot perform recount.` });
+    }
+
+    const vouchChannels = guild.channels.cache.filter(c =>
+        c.isTextBased() &&
+        (c.name.toLowerCase().includes('vouch') || c.name.toLowerCase().includes('review') || c.name.toLowerCase().includes('feedback'))
+    );
+
+    if (vouchChannels.size === 0) {
+        return safeReply(interaction, { content: '❌ No vouch channels found.' });
+    }
+
+    // Reset points for a clean recount
+    vouchPoints.clear();
+    let processedMessages = 0;
+    let foundVouches = 0;
+    let totalPointsAwarded = 0;
+
+    await safeReply(interaction, { content: `⏳ **Recounting vouches...**\n\n- Wiped all existing points.\n- Found ${vouchChannels.size} vouch channel(s) to scan.\n- This may take a few minutes...` });
+
+    for (const channel of vouchChannels.values()) {
+        let lastId;
+        while (true) {
+            const messages = await channel.messages.fetch({ limit: 100, before: lastId });
+            if (messages.size === 0) break;
+
+            for (const message of messages.values()) {
+                processedMessages++;
+                const hasImage = message.attachments.some(a => a.contentType?.startsWith('image/'));
+                const mentionedUsers = message.mentions.users;
+
+                if (hasImage && mentionedUsers.size > 0) {
+                    let providersInVouch = 0;
+                    for (const user of mentionedUsers.values()) {
+                        try {
+                            const member = await guild.members.fetch(user.id);
+                            if (member && member.roles.cache.has(providerRole.id)) {
+                                const currentPoints = vouchPoints.get(user.id) || 0;
+                                vouchPoints.set(user.id, currentPoints + POINTS_PER_VOUCH);
+                                totalPointsAwarded += POINTS_PER_VOUCH;
+                                providersInVouch++;
+                            }
+                        } catch (err) {
+                            // Ignore errors for users who may have left the server
+                        }
+                    }
+                    if (providersInVouch > 0) {
+                        foundVouches++;
+                    }
+                }
+            }
+            lastId = messages.last().id;
+        }
+    }
+
+    await savePoints();
+
+    const summaryEmbed = new EmbedBuilder()
+        .setColor(0x00FF00)
+        .setTitle('✅ Recount Complete!')
+        .setDescription('All points have been recalculated from the vouch channel history.')
+        .addFields(
+            { name: '📊 Messages Scanned', value: `${processedMessages}`, inline: true },
+            { name: '🖼️ Valid Vouches Found', value: `${foundVouches}`, inline: true },
+            { name: '💰 Total Points Awarded', value: `${totalPointsAwarded}`, inline: true }
+        )
+        .setTimestamp();
+
+    await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
 }
 
 client.login(process.env.DISCORD_TOKEN); 
