@@ -115,10 +115,10 @@ function savePoints() {
   }
 }
 
-// Call loadPoints when bot starts
-loadPoints();
+// Initialize storage and load points when the module loads
+// This will happen automatically at startup
 
-// Handle button interactions for gambling
+// Simple handler for legacy confirmation buttons
 async function handleButtonInteraction(interaction) {
   const userId = interaction.user.id;
   
@@ -150,57 +150,6 @@ async function handleButtonInteraction(interaction) {
     }
     // For blackjack_confirm, the collector in the slash command will handle it
     return;
-  }
-  
-  // Handle blackjack game buttons
-  if (interaction.customId.startsWith('blackjack_')) {
-    const game = blackjackGames.get(userId);
-    if (!game) {
-      return interaction.reply({ content: 'Game not found!', ephemeral: true });
-    }
-    
-    if (interaction.customId === 'blackjack_hit') {
-      // Hit
-      game.playerHand.push(drawCard(game.deck));
-      const playerValue = getHandValue(game.playerHand);
-      
-      if (playerValue > 21) {
-        await handleBlackjackEndSlash(interaction, false, 'Bust! You went over 21');
-      } else if (playerValue === 21) {
-        await handleBlackjackEndSlash(interaction, null, 'You got 21! Dealer\'s turn...');
-      } else {
-        const embed = createBlackjackEmbed(game, false);
-        const row = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId('blackjack_hit')
-              .setLabel('🃏 Hit')
-              .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-              .setCustomId('blackjack_stand')
-              .setLabel('✋ Stand')
-              .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-              .setCustomId('blackjack_quit')
-              .setLabel('❌ Quit')
-              .setStyle(ButtonStyle.Danger)
-          );
-        await interaction.update({ embeds: [embed], components: [row] });
-      }
-    } else if (interaction.customId === 'blackjack_stand') {
-      // Stand
-      await handleBlackjackEndSlash(interaction, null, 'You stand. Dealer\'s turn...');
-    } else if (interaction.customId === 'blackjack_quit') {
-      // Quit
-      blackjackGames.delete(userId);
-      const embed = new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setTitle('🃏 Blackjack - Game Quit')
-        .setDescription('Game cancelled. Your bet has been returned.')
-        .setTimestamp();
-      
-      await interaction.update({ embeds: [embed], components: [] });
-    }
   }
 }
 
@@ -1584,5 +1533,9 @@ async function handleBlackjackEndSlash(interaction, playerWon, reason) {
   savePoints();
   blackjackGames.delete(userId);
 }
+
+// Initialize storage and load points - this happens when the bot starts
+initializeStorage();
+loadPoints();
 
 client.login(process.env.DISCORD_TOKEN); 
