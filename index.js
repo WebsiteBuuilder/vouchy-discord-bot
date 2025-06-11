@@ -1628,11 +1628,11 @@ async function handleStoreOpen(interaction) {
     await interaction.deferReply({ ephemeral: true });
 
     try {
-        const statusCategory = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'status' && c.type === ChannelType.GuildCategory);
-        const orderChannel = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'order-here');
+        const statusCategory = interaction.guild.channels.cache.find(c => c.name.toLowerCase().includes('status') && c.type === ChannelType.GuildCategory);
+        const orderChannel = interaction.guild.channels.cache.find(c => c.name.toLowerCase().includes('order-here'));
 
         if (!orderChannel) {
-            return interaction.editReply({ content: '❌ Could not find the `#order-here` channel.' });
+            return interaction.editReply({ content: '❌ Could not find a channel with "order-here" in its name.' });
         }
 
         let statusChannel;
@@ -1668,11 +1668,11 @@ async function handleStoreClose(interaction) {
     await interaction.deferReply({ ephemeral: true });
 
     try {
-        const statusCategory = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'status' && c.type === ChannelType.GuildCategory);
-        const orderChannel = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'order-here');
+        const statusCategory = interaction.guild.channels.cache.find(c => c.name.toLowerCase().includes('status') && c.type === ChannelType.GuildCategory);
+        const orderChannel = interaction.guild.channels.cache.find(c => c.name.toLowerCase().includes('order-here'));
 
         if (!orderChannel) {
-            return interaction.editReply({ content: '❌ Could not find the `#order-here` channel.' });
+            return interaction.editReply({ content: '❌ Could not find a channel with "order-here" in its name.' });
         }
 
         let statusChannel;
