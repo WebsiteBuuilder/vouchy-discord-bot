@@ -549,8 +549,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     
     const response = await interaction.reply({ embeds: [confirmEmbed], components: [row] });
     
-    // Store bet info for confirmation
-    const collector = response.createMessageComponentCollector({ time: 30000 });
+    const collector = response.createMessageComponentCollector({ time: 300000 }); // 5 minutes instead of 30 seconds
     
     collector.on('collect', async i => {
       if (i.user.id !== userId) {
@@ -558,8 +557,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       
       if (i.customId === 'roulette_confirm') {
+        collector.stop('game_started'); // Stop the confirmation collector
         await playRouletteSlash(i, betAmount, finalBetType);
       } else {
+        collector.stop('cancelled');
         const cancelEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
           .setTitle('❌ Bet Cancelled')
@@ -570,15 +571,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     });
     
-    collector.on('end', collected => {
-      if (collected.size === 0) {
+    collector.on('end', (collected, reason) => {
+      if (reason === 'time') {
+        // Only show timeout if the user didn't start a game or cancel
         const timeoutEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
-          .setTitle('⏰ Bet Expired')
-          .setDescription('Your roulette bet has expired.')
+          .setTitle('⏰ Bet Timeout')
+          .setDescription('Your roulette bet confirmation timed out.')
           .setTimestamp();
         
-        interaction.editReply({ embeds: [timeoutEmbed], components: [] });
+        interaction.editReply({ embeds: [timeoutEmbed], components: [] }).catch(() => {});
       }
     });
   }
@@ -637,7 +639,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     
     const response = await interaction.reply({ embeds: [confirmEmbed], components: [row] });
     
-    const collector = response.createMessageComponentCollector({ time: 30000 });
+    const collector = response.createMessageComponentCollector({ time: 300000 }); // 5 minutes instead of 30 seconds
     
     collector.on('collect', async i => {
       if (i.user.id !== userId) {
@@ -645,8 +647,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       
       if (i.customId === 'blackjack_confirm') {
+        collector.stop('game_started'); // Stop the confirmation collector
         await playBlackjackSlash(i, betAmount);
       } else {
+        collector.stop('cancelled');
         const cancelEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
           .setTitle('❌ Bet Cancelled')
@@ -659,12 +663,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
     
     collector.on('end', (collected, reason) => {
       if (reason === 'time') {
-        // Game timed out
-        const game = blackjackGames.get(userId);
-        if (game) {
-          blackjackGames.delete(userId);
-          // Optionally notify the user that the game timed out
-        }
+        // Only show timeout if the user didn't start a game or cancel
+        const timeoutEmbed = new EmbedBuilder()
+          .setColor(0xFF0000)
+          .setTitle('⏰ Bet Timeout')
+          .setDescription('Your blackjack bet confirmation timed out.')
+          .setTimestamp();
+        
+        interaction.editReply({ embeds: [timeoutEmbed], components: [] }).catch(() => {});
       }
     });
   }
