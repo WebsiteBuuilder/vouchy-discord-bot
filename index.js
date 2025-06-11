@@ -657,15 +657,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     });
     
-    collector.on('end', collected => {
-      if (collected.size === 0) {
-        const timeoutEmbed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('⏰ Bet Expired')
-          .setDescription('Your blackjack bet has expired.')
-          .setTimestamp();
-        
-        interaction.editReply({ embeds: [timeoutEmbed], components: [] });
+    collector.on('end', (collected, reason) => {
+      if (reason === 'time') {
+        // Game timed out
+        const game = blackjackGames.get(userId);
+        if (game) {
+          blackjackGames.delete(userId);
+          // Optionally notify the user that the game timed out
+        }
       }
     });
   }
@@ -1086,16 +1085,17 @@ async function playBlackjackSlash(interaction, betAmount) {
   
   await interaction.editReply({ embeds: [embed], components: [row] });
   
-  // Set up button collector with enhanced feedback
-  const collector = interaction.channel.createMessageComponentCollector({ 
-    filter: i => i.user.id === userId && ['blackjack_hit', 'blackjack_stand', 'blackjack_double', 'blackjack_quit'].includes(i.customId),
+  // Set up button collector with enhanced feedback - FIXED VERSION
+  const message = await interaction.fetchReply();
+  const collector = message.createMessageComponentCollector({ 
+    filter: i => i.user.id === userId,
     time: 300000 
   });
   
   collector.on('collect', async i => {
     const currentGame = blackjackGames.get(userId);
     if (!currentGame) {
-      return i.reply({ content: 'Game not found!', ephemeral: true });
+      return i.reply({ content: '❌ Game session expired! Please start a new game.', ephemeral: true });
     }
     
     if (i.customId === 'blackjack_hit') {
@@ -1126,6 +1126,7 @@ async function playBlackjackSlash(interaction, betAmount) {
           .setTimestamp();
 
         await i.editReply({ embeds: [bustEmbed], components: [] });
+        collector.stop('bust');
         await new Promise(resolve => setTimeout(resolve, 2000));
         await handleBlackjackEndSlash(i, false, 'Bust! You went over 21');
       } else if (playerValue === 21) {
@@ -1141,6 +1142,7 @@ async function playBlackjackSlash(interaction, betAmount) {
           .setTimestamp();
 
         await i.editReply({ embeds: [twentyOneEmbed], components: [] });
+        collector.stop('twenty-one');
         await new Promise(resolve => setTimeout(resolve, 2000));
         await handleBlackjackEndSlash(i, null, 'You got 21! Dealer\'s turn...');
       } else {
@@ -1158,7 +1160,8 @@ async function playBlackjackSlash(interaction, betAmount) {
             new ButtonBuilder()
               .setCustomId('blackjack_double')
               .setLabel('⬆️ Double Down')
-              .setStyle(ButtonStyle.Success),
+              .setStyle(ButtonStyle.Success)
+              .setDisabled(currentGame.playerHand.length > 2), // Disable after first hit
             new ButtonBuilder()
               .setCustomId('blackjack_quit')
               .setLabel('❌ Fold')
@@ -1205,6 +1208,7 @@ async function playBlackjackSlash(interaction, betAmount) {
           .setTimestamp();
 
         await i.editReply({ embeds: [bustEmbed], components: [] });
+        collector.stop('double-bust');
         await new Promise(resolve => setTimeout(resolve, 2000));
         await handleBlackjackEndSlash(i, false, 'Double Down Bust!');
       } else {
@@ -1220,6 +1224,7 @@ async function playBlackjackSlash(interaction, betAmount) {
           .setTimestamp();
 
         await i.editReply({ embeds: [doubleStandEmbed], components: [] });
+        collector.stop('double-stand');
         await new Promise(resolve => setTimeout(resolve, 2000));
         await handleBlackjackEndSlash(i, null, 'Double down complete! Dealer\'s turn...');
       }
@@ -1236,6 +1241,7 @@ async function playBlackjackSlash(interaction, betAmount) {
         .setTimestamp();
 
       await i.update({ embeds: [standEmbed], components: [] });
+      collector.stop('stand');
       await new Promise(resolve => setTimeout(resolve, 2000));
       await handleBlackjackEndSlash(i, null, 'You stand. Dealer\'s turn...');
     } else if (i.customId === 'blackjack_quit') {
@@ -1251,12 +1257,18 @@ async function playBlackjackSlash(interaction, betAmount) {
         .setTimestamp();
       
       await i.update({ embeds: [quitEmbed], components: [] });
+      collector.stop('quit');
     }
   });
   
-  collector.on('end', () => {
-    if (blackjackGames.has(userId)) {
-      blackjackGames.delete(userId);
+  collector.on('end', (collected, reason) => {
+    if (reason === 'time') {
+      // Game timed out
+      const game = blackjackGames.get(userId);
+      if (game) {
+        blackjackGames.delete(userId);
+        // Optionally notify the user that the game timed out
+      }
     }
   });
 }
