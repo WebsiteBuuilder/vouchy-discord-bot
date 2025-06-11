@@ -255,16 +255,13 @@ client.on(Events.MessageCreate, async (message) => {
     return;
   }
 
-  console.log(`🎯 Awarding points to ${mentionedProviders.length} provider(s)...`);
+  console.log(`🎯 Awarding point to the voucher: ${message.author.username}...`);
 
-  // Add points for each mentioned provider
-  mentionedProviders.forEach(provider => {
-    const currentPoints = vouchPoints.get(provider.id) || 0;
-    const newPoints = currentPoints + POINTS_PER_VOUCH;
-    vouchPoints.set(provider.id, newPoints);
-    
-    console.log(`💰 Added ${POINTS_PER_VOUCH} point(s) to ${provider.username} (${provider.id}) - New total: ${newPoints}`);
-  });
+  // Award point to the author of the message for making a valid vouch
+  const authorId = message.author.id;
+  const currentPoints = vouchPoints.get(authorId) || 0;
+  const newPoints = currentPoints + POINTS_PER_VOUCH;
+  vouchPoints.set(authorId, newPoints);
   
   // Save points after adding
   savePoints();
@@ -272,18 +269,17 @@ client.on(Events.MessageCreate, async (message) => {
   // Send confirmation message
   const embed = new EmbedBuilder()
     .setColor(0x00FF00)
-    .setTitle('✅ Vouch Points Added!')
-    .setDescription(`**${message.author.username}** vouched for:\n${mentionedProviders.map(p => `• <@${p.id}> (+${POINTS_PER_VOUCH} point${POINTS_PER_VOUCH !== 1 ? 's' : ''})`).join('\n')}`)
-    .addFields({
-      name: 'Total Points Awarded',
-      value: `${mentionedProviders.length * POINTS_PER_VOUCH} point${mentionedProviders.length * POINTS_PER_VOUCH !== 1 ? 's' : ''}`,
-      inline: true
-    })
-    .setFooter({ text: `Vouched by ${message.author.username}` })
+    .setTitle('✅ Vouch Successful!')
+    .setDescription(`Thank you, <@${authorId}>, for vouching for **${mentionedProviders.map(p => p.username).join(', ')}**!`)
+    .addFields(
+        { name: 'Points Awarded', value: `+${POINTS_PER_VOUCH}`, inline: true },
+        { name: 'Your New Balance', value: `${newPoints} points`, inline: true }
+    )
+    .setFooter({ text: `Your contribution helps the community!` })
     .setTimestamp();
 
   await message.reply({ embeds: [embed] });
-  console.log(`🎉 Vouch processed successfully! ${mentionedProviders.length} provider(s) received points.`);
+  console.log(`🎉 Vouch processed successfully! ${message.author.username} received ${POINTS_PER_VOUCH} point.`);
 });
 
 // Slash command to check points
@@ -1518,17 +1514,17 @@ async function handleRecountVouches(interaction) {
             for (const message of messages.values()) {
                 processedMessages++;
                 const hasImage = message.attachments.some(a => a.contentType?.startsWith('image/'));
-                if (hasImage && message.mentions.users.size > 0) {
-                    let providersInVouch = 0;
-                    message.mentions.users.forEach(user => {
-                        if (providerIds.has(user.id)) {
-                            const currentPoints = vouchPoints.get(user.id) || 0;
-                            vouchPoints.set(user.id, currentPoints + POINTS_PER_VOUCH);
-                            totalPointsAwarded += POINTS_PER_VOUCH;
-                            providersInVouch++;
-                        }
-                    });
-                    if (providersInVouch > 0) {
+                
+                // Ensure the message isn't from a bot and has mentions
+                if (!message.author.bot && hasImage && message.mentions.users.size > 0) {
+                    // Check if any mentioned user is a real provider
+                    const hasProviderMention = message.mentions.users.some(user => providerIds.has(user.id));
+                    
+                    if (hasProviderMention) {
+                        const authorId = message.author.id;
+                        const currentPoints = vouchPoints.get(authorId) || 0;
+                        vouchPoints.set(authorId, currentPoints + POINTS_PER_VOUCH);
+                        totalPointsAwarded += POINTS_PER_VOUCH;
                         foundVouches++;
                     }
                 }
