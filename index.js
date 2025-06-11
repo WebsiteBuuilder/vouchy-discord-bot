@@ -3,122 +3,89 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// Persistent storage for points - use Railway volume mount
-const VOLUME_PATH = '/app/data';
-const POINTS_FILE = path.join(VOLUME_PATH, 'points.json');
-const BACKUP_POINTS_FILE = path.join(VOLUME_PATH, 'points-backup.json');
-const vouchPoints = new Map();
+// Persistent storage paths
+const dataDir = process.env.DATA_DIR || '/app/data';
+const pointsPath = path.join(dataDir, 'points.json');
+const backupPath = path.join(dataDir, 'points-backup.json');
+const activeGamesPath = path.join(dataDir, 'active-games.json');
 
-// Load points from file on startup
+// Ensure data directory exists
+if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+}
+
+let vouchPoints = new Map();
+let blackjackGames = new Map();
+
+// Function to load vouch points
 function loadPoints() {
-  try {
-    // Ensure the volume directory exists
-    if (!fs.existsSync(VOLUME_PATH)) {
-      fs.mkdirSync(VOLUME_PATH, { recursive: true });
-      console.log(`📁 Created directory: ${VOLUME_PATH}`);
-    }
-    
-    // Try to load from main points file
-    if (fs.existsSync(POINTS_FILE)) {
-      try {
-        const data = fs.readFileSync(POINTS_FILE, 'utf8');
-        const pointsObj = JSON.parse(data);
-        Object.entries(pointsObj).forEach(([userId, points]) => {
-          vouchPoints.set(userId, points);
-        });
-        console.log(`✅ Loaded ${vouchPoints.size} user points from ${POINTS_FILE}`);
-        
-        // Create backup on successful load
-        fs.writeFileSync(BACKUP_POINTS_FILE, data);
-        console.log(`💾 Created backup at ${BACKUP_POINTS_FILE}`);
-        
-      } catch (error) {
-        console.error(`❌ Error reading main points file: ${error.message}`);
-        console.log(`🔄 Attempting to load from backup...`);
-        
-        // Try backup file
-        if (fs.existsSync(BACKUP_POINTS_FILE)) {
-          const backupData = fs.readFileSync(BACKUP_POINTS_FILE, 'utf8');
-          const pointsObj = JSON.parse(backupData);
-          Object.entries(pointsObj).forEach(([userId, points]) => {
-            vouchPoints.set(userId, points);
-          });
-          console.log(`✅ Loaded ${vouchPoints.size} user points from backup`);
-          
-          // Restore main file from backup
-          fs.writeFileSync(POINTS_FILE, backupData);
-          console.log(`🔄 Restored main points file from backup`);
-        }
-      }
-    } else {
-      console.log(`📋 No points file found at ${POINTS_FILE}, starting fresh`);
-      
-      // Check if backup exists
-      if (fs.existsSync(BACKUP_POINTS_FILE)) {
-        console.log(`🔄 Found backup file, restoring...`);
-        const backupData = fs.readFileSync(BACKUP_POINTS_FILE, 'utf8');
-        const pointsObj = JSON.parse(backupData);
-        Object.entries(pointsObj).forEach(([userId, points]) => {
-          vouchPoints.set(userId, points);
-        });
-        console.log(`✅ Loaded ${vouchPoints.size} user points from backup`);
-        
-        // Restore main file
-        fs.writeFileSync(POINTS_FILE, backupData);
-        console.log(`🔄 Restored main points file`);
-      }
-    }
-    
-    console.log(`🎯 Points tracking system ready with ${vouchPoints.size} users`);
-    
-  } catch (error) {
-    console.error('💥 Critical error loading points:', error);
-    console.log('🚀 Starting with empty points database');
-  }
-}
-
-// Save points to file with backup
-function savePoints() {
-  try {
-    // Ensure the volume directory exists
-    if (!fs.existsSync(VOLUME_PATH)) {
-      fs.mkdirSync(VOLUME_PATH, { recursive: true });
-      console.log(`📁 Created directory: ${VOLUME_PATH}`);
-    }
-    
-    const pointsObj = {};
-    vouchPoints.forEach((points, userId) => {
-      pointsObj[userId] = points;
-    });
-    
-    const jsonData = JSON.stringify(pointsObj, null, 2);
-    
-    // Write to main file
-    fs.writeFileSync(POINTS_FILE, jsonData);
-    
-    // Write to backup file
-    fs.writeFileSync(BACKUP_POINTS_FILE, jsonData);
-    
-    console.log(`💾 Points saved successfully to ${POINTS_FILE} (${vouchPoints.size} users)`);
-    
-  } catch (error) {
-    console.error('❌ Error saving points:', error);
-    
-    // Try alternative method
     try {
-      const pointsArray = Array.from(vouchPoints.entries());
-      fs.writeFileSync(path.join(VOLUME_PATH, 'points-emergency.json'), JSON.stringify(pointsArray));
-      console.log('🚨 Emergency backup created');
-    } catch (emergencyError) {
-      console.error('💥 Emergency backup also failed:', emergencyError);
+        if (fs.existsSync(pointsPath)) {
+            const data = fs.readFileSync(pointsPath, 'utf8');
+            const parsedData = JSON.parse(data);
+            vouchPoints = new Map(Object.entries(parsedData));
+            console.log(`✅ Loaded ${vouchPoints.size} user points from ${pointsPath}`);
+        } else {
+            console.log(`📝 No points file found. Starting fresh.`);
+            fs.writeFileSync(pointsPath, JSON.stringify({}));
+        }
+    } catch (error) {
+        console.error('❌ Error loading points:', error);
+        if (fs.existsSync(backupPath)) {
+            console.log('↩️ Attempting to restore from backup...');
+            const backupData = fs.readFileSync(backupPath, 'utf8');
+            const parsedBackup = JSON.parse(backupData);
+            vouchPoints = new Map(Object.entries(parsedBackup));
+            fs.writeFileSync(pointsPath, backupData);
+            console.log(`✅ Successfully restored ${vouchPoints.size} points from backup.`);
+        }
     }
-  }
 }
 
-// Call loadPoints when bot starts
+// Function to load active blackjack games
+function loadBlackjackGames() {
+    try {
+        if (fs.existsSync(activeGamesPath) && fs.readFileSync(activeGamesPath, 'utf8').length > 0) {
+            const data = fs.readFileSync(activeGamesPath, 'utf8');
+            const gamesArray = JSON.parse(data);
+            blackjackGames = new Map(gamesArray);
+            console.log(`✅ Loaded ${blackjackGames.size} active blackjack games.`);
+        } else {
+            console.log('🤔 No active blackjack games file found, starting fresh.');
+        }
+    } catch (error) {
+        console.error('❌ Error loading active blackjack games:', error);
+    }
+}
+
+
+// Function to save vouch points (with backup)
+async function savePoints() {
+    try {
+        const data = JSON.stringify(Object.fromEntries(vouchPoints), null, 2);
+        fs.writeFileSync(pointsPath, data);
+        fs.writeFileSync(backupPath, data);
+    } catch (error) {
+        console.error('❌ Error saving points:', error);
+    }
+}
+
+// Function to save active blackjack games
+async function saveBlackjackGames() {
+    try {
+        const gamesArray = Array.from(blackjackGames.entries());
+        fs.writeFileSync(activeGamesPath, JSON.stringify(gamesArray, null, 2));
+    } catch (error) {
+        console.error('❌ Error saving active blackjack games:', error);
+    }
+}
+
+// Load all data on startup
 loadPoints();
+loadBlackjackGames();
 
 // Handle button interactions for gambling
+// This function is now mostly legacy or for non-blackjack buttons
 async function handleButtonInteraction(interaction) {
   const userId = interaction.user.id;
   
@@ -189,18 +156,28 @@ function getPotentialPayout(betType, betAmount) {
   }
 }
 
-client.once(Events.ClientReady, (readyClient) => {
+client.once(Events.ClientReady, async (readyClient) => {
   console.log(`🚀 Ready! Logged in as ${readyClient.user.tag}`);
-  
-  // Set up periodic auto-save every 5 minutes
-  setInterval(() => {
-    if (vouchPoints.size > 0) {
-      savePoints();
-      console.log(`🔄 Auto-saved ${vouchPoints.size} user points`);
+
+    // --- AUTOMATIC TEST USER CLEANUP ---
+    const usersToRemove = ['test_user_1', 'test_user_2', 'test_user_3'];
+    let usersWereRemoved = false;
+    usersToRemove.forEach(userId => {
+        if (vouchPoints.has(userId)) {
+            vouchPoints.delete(userId);
+            console.log(`🧹 Automatically removed test user: ${userId}`);
+            usersWereRemoved = true;
+        }
+    });
+
+    if (usersWereRemoved) {
+        console.log('💾 Saving point changes after cleanup...');
+        await savePoints();
     }
-  }, 5 * 60 * 1000); // 5 minutes
   
-  console.log(`💾 Auto-save enabled (every 5 minutes)`);
+  // Set up periodic auto-save every 15 seconds
+  setInterval(savePoints, 15000); 
+  console.log(`💾 Auto-save enabled (every 15 seconds)`);
 });
 
 client.on(Events.MessageCreate, async (message) => {
@@ -425,8 +402,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       savePoints();
 
       // Get file stats
-      const stats = fs.existsSync(POINTS_FILE) ? fs.statSync(POINTS_FILE) : null;
-      const backupStats = fs.existsSync(BACKUP_POINTS_FILE) ? fs.statSync(BACKUP_POINTS_FILE) : null;
+      const stats = fs.existsSync(pointsPath) ? fs.statSync(pointsPath) : null;
+      const backupStats = fs.existsSync(backupPath) ? fs.statSync(backupPath) : null;
 
       const embed = new EmbedBuilder()
         .setColor(0x00FF00)
@@ -435,8 +412,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .addFields(
           { name: '👥 Total Users', value: `${vouchPoints.size}`, inline: true },
           { name: '📊 Total Points', value: `${Array.from(vouchPoints.values()).reduce((a, b) => a + b, 0)}`, inline: true },
-          { name: '📁 Storage Path', value: `${VOLUME_PATH}`, inline: false },
-          { name: '📄 Main File', value: stats ? `✅ ${(stats.size / 1024).toFixed(2)} KB` : '❌ Not found', inline: true },
+          { name: '📁 Storage Path', value: `${dataDir}`, inline: false },
+          { name: '👥 Main File', value: stats ? `✅ ${(stats.size / 1024).toFixed(2)} KB` : '❌ Not found', inline: true },
           { name: '💾 Backup File', value: backupStats ? `✅ ${(backupStats.size / 1024).toFixed(2)} KB` : '❌ Not found', inline: true },
           { name: '🕒 Last Modified', value: stats ? `<t:${Math.floor(stats.mtime.getTime() / 1000)}:R>` : 'N/A', inline: true }
         )
@@ -704,31 +681,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   if (interaction.commandName === 'remove-user') {
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: '❌ You do not have permission to use this command.', ephemeral: true });
-    }
-
-    const userToRemove = interaction.options.getUser('user');
-    if (!userToRemove) {
-      return interaction.reply({ content: 'Invalid user provided.', ephemeral: true });
-    }
-    const userIdToRemove = userToRemove.id;
-
-    if (vouchPoints.has(userIdToRemove)) {
-        const removedPoints = vouchPoints.get(userIdToRemove);
-        vouchPoints.delete(userIdToRemove);
-        await savePoints(); // Persist the change
-
-        return interaction.reply({
-            content: `✅ Successfully removed **${userToRemove.username}** and their **${removedPoints}** points from the system. The leaderboard is now updated.`,
-            ephemeral: true
-        });
-    } else {
-        return interaction.reply({
-            content: `🤔 User **${userToRemove.username}** was not found in the points system.`,
-            ephemeral: true
-        });
-    }
+    // This command is no longer needed due to automatic cleanup
+    return interaction.reply({ content: 'This command is deprecated.', ephemeral: true });
   }
 });
 
@@ -1064,7 +1018,8 @@ async function playRouletteSlash(interaction, betAmount, betType) {
 }
 
 // Blackjack game storage
-const blackjackGames = new Map();
+// This is now loaded from a file at the top level
+// const blackjackGames = new Map();
 
 async function playBlackjack(message, betAmount) {
   const userId = message.author.id;
@@ -1226,6 +1181,7 @@ async function handleDoubleDown(interaction, game) {
 
 async function handleQuit(interaction, game) {
   blackjackGames.delete(game.userId);
+  await saveBlackjackGames();
   
   const embed = new EmbedBuilder()
     .setColor(0xFFD700)
@@ -1282,6 +1238,7 @@ async function endGame(interaction, game, playerWon, reason) {
   vouchPoints.set(game.userId, newPoints);
   savePoints();
   blackjackGames.delete(game.userId);
+  await saveBlackjackGames();
   
   // Create result embed
   const color = playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFD700;
@@ -1361,6 +1318,7 @@ async function playBlackjackSlash(interaction, betAmount) {
     };
     
     blackjackGames.set(userId, game);
+    await saveBlackjackGames();
     
     const playerValue = getHandValue(playerHand);
     
@@ -1375,9 +1333,13 @@ async function playBlackjackSlash(interaction, betAmount) {
     await interaction.update({ embeds: [embed], components: [buttons] });
     
     // Auto-cleanup after 10 minutes
-    setTimeout(() => {
-      if (blackjackGames.has(userId)) {
+    setTimeout(async () => {
+      const currentGame = blackjackGames.get(userId);
+      // Only delete if the game is still the same one, preventing race conditions
+      if (currentGame && currentGame.timestamp === game.timestamp) {
         blackjackGames.delete(userId);
+        await saveBlackjackGames();
+        console.log(`⏰ Timed out and removed blackjack game for user ${userId}`);
       }
     }, 600000);
     
@@ -1501,6 +1463,7 @@ async function handleBlackjackEnd(message, playerWon, reason) {
   vouchPoints.set(game.userId, newPoints);
   savePoints(); // Save after blackjack
   blackjackGames.delete(game.userId);
+  await saveBlackjackGames();
   
   const embed = new EmbedBuilder()
     .setColor(playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFFF00)
