@@ -152,14 +152,18 @@ async function handleButtonInteraction(interaction) {
     return;
   }
   
-  // Handle blackjack game buttons
-  if (interaction.customId.startsWith('blackjack_')) {
+  // Handle blackjack game buttons with improved reliability
+  if (interaction.customId.startsWith('bj_')) {
     const game = blackjackGames.get(userId);
     if (!game) {
-      return interaction.reply({ content: 'Game not found!', ephemeral: true });
+      await interaction.deferUpdate();
+      return interaction.followUp({ content: 'Game not found!', ephemeral: true });
     }
     
-    if (interaction.customId === 'blackjack_hit') {
+    // Defer update immediately to prevent interaction timeout
+    await interaction.deferUpdate();
+    
+    if (interaction.customId === `bj_hit_${userId}`) {
       // Hit
       game.playerHand.push(drawCard(game.deck));
       const playerValue = getHandValue(game.playerHand);
@@ -170,27 +174,38 @@ async function handleButtonInteraction(interaction) {
         await handleBlackjackEndSlash(interaction, null, 'You got 21! Dealer\'s turn...');
       } else {
         const embed = createBlackjackEmbed(game, false);
-        const row = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId('blackjack_hit')
-              .setLabel('🃏 Hit')
-              .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-              .setCustomId('blackjack_stand')
-              .setLabel('✋ Stand')
-              .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-              .setCustomId('blackjack_quit')
-              .setLabel('❌ Quit')
-              .setStyle(ButtonStyle.Danger)
-          );
-        await interaction.update({ embeds: [embed], components: [row] });
+        const row = createBlackjackButtons(userId, game.playerHand.length === 2);
+        await interaction.editReply({ embeds: [embed], components: [row] });
       }
-    } else if (interaction.customId === 'blackjack_stand') {
+    } else if (interaction.customId === `bj_stand_${userId}`) {
       // Stand
       await handleBlackjackEndSlash(interaction, null, 'You stand. Dealer\'s turn...');
-    } else if (interaction.customId === 'blackjack_quit') {
+    } else if (interaction.customId === `bj_double_${userId}`) {
+      // Double Down - only allowed on first two cards
+      if (game.playerHand.length !== 2) {
+        return interaction.followUp({ content: 'Double down only allowed on first two cards!', ephemeral: true });
+      }
+      
+      const userPoints = vouchPoints.get(userId) || 0;
+      if (userPoints < game.betAmount) {
+        return interaction.followUp({ content: 'Insufficient points to double down!', ephemeral: true });
+      }
+      
+      // Double the bet
+      game.betAmount *= 2;
+      game.isDoubleDown = true;
+      
+      // Draw exactly one more card
+      game.playerHand.push(drawCard(game.deck));
+      const playerValue = getHandValue(game.playerHand);
+      
+      if (playerValue > 21) {
+        await handleBlackjackEndSlash(interaction, false, 'Bust! You went over 21 (Double Down)');
+      } else {
+        // Automatically stand after double down
+        await handleBlackjackEndSlash(interaction, null, 'Double Down! Dealer\'s turn...');
+      }
+    } else if (interaction.customId === `bj_quit_${userId}`) {
       // Quit
       blackjackGames.delete(userId);
       const embed = new EmbedBuilder()
@@ -199,7 +214,7 @@ async function handleButtonInteraction(interaction) {
         .setDescription('Game cancelled. Your bet has been returned.')
         .setTimestamp();
       
-      await interaction.update({ embeds: [embed], components: [] });
+      await interaction.editReply({ embeds: [embed], components: [] });
     }
   }
 }
@@ -384,17 +399,37 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .slice(0, 10);
 
     if (sortedPoints.length === 0) {
-      return interaction.reply('No vouch points recorded yet!');
+      const embed = new EmbedBuilder()
+        .setColor(0xFF0000)
+        .setTitle('🏆 Vouch Leaderboard')
+        .setDescription('📋 **No vouch points recorded yet!**\n\n🎯 **How to get points:**\n• Post images with provider tags in vouch channels\n• Win points through gambling games\n\n🎮 **Try the games:**\n• `/roulette` - European roulette with physics!\n• `/blackjack` - Full blackjack with Double Down!')
+        .setFooter({ text: 'Be the first to appear on the leaderboard!' })
+        .setTimestamp();
+      
+      return interaction.reply({ embeds: [embed] });
     }
 
+    const medals = ['🥇', '🥈', '🥉'];
     const leaderboardText = sortedPoints
-      .map(([userId, points], index) => `${index + 1}. <@${userId}>: **${points}** points`)
+      .map(([userId, points], index) => {
+        const medal = index < 3 ? medals[index] : `${index + 1}.`;
+        return `${medal} <@${userId}>: **${points}** points`;
+      })
       .join('\n');
+
+    const totalPoints = Array.from(vouchPoints.values()).reduce((sum, points) => sum + points, 0);
+    const totalUsers = vouchPoints.size;
 
     const embed = new EmbedBuilder()
       .setColor(0xFFD700)
-      .setTitle('🏆 Vouch Leaderboard')
+      .setTitle('🏆 Vouch Leaderboard - Top Performers')
       .setDescription(leaderboardText)
+      .addFields(
+        { name: '📊 Stats', value: `👥 **${totalUsers}** users\n💰 **${totalPoints}** total points`, inline: true },
+        { name: '🎮 Games', value: '🎰 `/roulette`\n🃏 `/blackjack`', inline: true },
+        { name: '📈 Earn Points', value: '🖼️ Post vouches\n🎯 Win at games', inline: true }
+      )
+      .setFooter({ text: `Showing top ${Math.min(10, sortedPoints.length)} players` })
       .setTimestamp();
 
     await interaction.reply({ embeds: [embed] });
@@ -1102,7 +1137,40 @@ async function playBlackjack(message, betAmount) {
   await reply.react('❌'); // quit
 }
 
-// Slash command version of blackjack
+// Create blackjack buttons with user-specific IDs
+function createBlackjackButtons(userId, canDoubleDown = true) {
+  const buttons = [
+    new ButtonBuilder()
+      .setCustomId(`bj_hit_${userId}`)
+      .setLabel('🃏 Hit Me!')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`bj_stand_${userId}`)
+      .setLabel('✋ I Stand')
+      .setStyle(ButtonStyle.Secondary)
+  ];
+  
+  // Add double down button only on first two cards
+  if (canDoubleDown) {
+    buttons.push(
+      new ButtonBuilder()
+        .setCustomId(`bj_double_${userId}`)
+        .setLabel('💰 Double Down!')
+        .setStyle(ButtonStyle.Success)
+    );
+  }
+  
+  buttons.push(
+    new ButtonBuilder()
+      .setCustomId(`bj_quit_${userId}`)
+      .setLabel('❌ Quit')
+      .setStyle(ButtonStyle.Danger)
+  );
+  
+  return new ActionRowBuilder().addComponents(buttons);
+}
+
+// Improved Slash command version of blackjack
 async function playBlackjackSlash(interaction, betAmount) {
   const userId = interaction.user.id;
   
@@ -1117,7 +1185,8 @@ async function playBlackjackSlash(interaction, betAmount) {
     dealerHand,
     betAmount,
     userId,
-    isSlashCommand: true
+    isSlashCommand: true,
+    isDoubleDown: false
   };
   
   blackjackGames.set(userId, game);
@@ -1130,143 +1199,19 @@ async function playBlackjackSlash(interaction, betAmount) {
   }
   
   const embed = createBlackjackEmbed(game, false);
-  const row = new ActionRowBuilder()
-    .addComponents(
-      new ButtonBuilder()
-        .setCustomId('blackjack_hit')
-        .setLabel('🃏 Hit')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId('blackjack_stand')
-        .setLabel('✋ Stand')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('blackjack_quit')
-        .setLabel('❌ Quit')
-        .setStyle(ButtonStyle.Danger)
-    );
+  const row = createBlackjackButtons(userId, true); // Can double down on first two cards
   
-  const reply = await interaction.update({ embeds: [embed], components: [row] });
+  await interaction.update({ embeds: [embed], components: [row] });
   
-  // Set up button collector
-  const collector = reply.createMessageComponentCollector({ time: 300000 }); // 5 minutes
-  
-  collector.on('collect', async i => {
-    if (i.user.id !== userId) {
-      return i.reply({ content: 'This is not your game!', ephemeral: true });
-    }
-    
-    const currentGame = blackjackGames.get(userId);
-    if (!currentGame) {
-      return i.reply({ content: 'Game not found!', ephemeral: true });
-    }
-    
-    if (i.customId === 'blackjack_hit') {
-      // Hit
-      currentGame.playerHand.push(drawCard(currentGame.deck));
-      const playerValue = getHandValue(currentGame.playerHand);
-      
-      if (playerValue > 21) {
-        await handleBlackjackEndSlash(i, false, 'Bust! You went over 21');
-      } else if (playerValue === 21) {
-        await handleBlackjackEndSlash(i, null, 'You got 21! Dealer\'s turn...');
-      } else {
-        const embed = createBlackjackEmbed(currentGame, false);
-        const row = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId('blackjack_hit')
-              .setLabel('🃏 Hit')
-              .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-              .setCustomId('blackjack_stand')
-              .setLabel('✋ Stand')
-              .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-              .setCustomId('blackjack_quit')
-              .setLabel('❌ Quit')
-              .setStyle(ButtonStyle.Danger)
-          );
-        await i.update({ embeds: [embed], components: [row] });
-      }
-    } else if (i.customId === 'blackjack_stand') {
-      // Stand
-      await handleBlackjackEndSlash(i, null, 'You stand. Dealer\'s turn...');
-    } else if (i.customId === 'blackjack_quit') {
-      // Quit
-      blackjackGames.delete(userId);
-      const embed = new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setTitle('🃏 Blackjack - Game Quit')
-        .setDescription('Game cancelled. Your bet has been returned.')
-        .setTimestamp();
-      
-      await i.update({ embeds: [embed], components: [] });
-    }
-  });
-  
-  collector.on('end', () => {
+  // Set timeout to clean up game after 5 minutes
+  setTimeout(() => {
     if (blackjackGames.has(userId)) {
       blackjackGames.delete(userId);
     }
-  });
+  }, 300000);
 }
 
-// Handle blackjack reactions
-client.on(Events.MessageReactionAdd, async (reaction, user) => {
-  if (user.bot) return;
-  
-  const game = blackjackGames.get(user.id);
-  if (!game) return;
-  
-  if (reaction.message.author.id !== client.user.id) return;
-  
-  const emoji = reaction.emoji.name;
-  
-  if (emoji === '🃏') {
-    // Hit
-    game.playerHand.push(drawCard(game.deck));
-    const playerValue = getHandValue(game.playerHand);
-    
-    if (playerValue > 21) {
-      if (game.isSlashCommand) {
-        handleBlackjackEndSlash(reaction.message, false, 'Bust! You went over 21');
-      } else {
-        handleBlackjackEnd(reaction.message, false, 'Bust! You went over 21');
-      }
-    } else if (playerValue === 21) {
-      if (game.isSlashCommand) {
-        handleBlackjackEndSlash(reaction.message, null, 'You got 21! Dealer\'s turn...');
-      } else {
-        handleBlackjackEnd(reaction.message, null, 'You got 21! Dealer\'s turn...');
-      }
-    } else {
-      const embed = createBlackjackEmbed(game, false);
-      reaction.message.edit({ embeds: [embed] });
-    }
-  } else if (emoji === '✋') {
-    // Stand
-    if (game.isSlashCommand) {
-      handleBlackjackEndSlash(reaction.message, null, 'You stand. Dealer\'s turn...');
-    } else {
-      handleBlackjackEnd(reaction.message, null, 'You stand. Dealer\'s turn...');
-    }
-  } else if (emoji === '❌') {
-    // Quit
-    blackjackGames.delete(user.id);
-    const embed = new EmbedBuilder()
-      .setColor(0xFF0000)
-      .setTitle('🃏 Blackjack - Game Quit')
-      .setDescription('Game cancelled. Your bet has been returned.')
-      .setTimestamp();
-    
-    reaction.message.edit({ embeds: [embed] });
-    reaction.message.reactions.removeAll();
-  }
-  
-  // Remove user's reaction
-  await reaction.users.remove(user.id);
-});
+// Legacy reaction handler removed - now using modern button system
 
 function createDeck() {
   const suits = ['♠️', '♥️', '♦️', '♣️'];
@@ -1396,7 +1341,7 @@ async function handleBlackjackEnd(message, playerWon, reason) {
   message.reactions.removeAll();
 }
 
-// Slash command version of handleBlackjackEnd
+// Enhanced blackjack end handler with Double Down support
 async function handleBlackjackEndSlash(messageOrInteraction, playerWon, reason) {
   // Find the game based on the user who reacted
   let userId;
@@ -1425,16 +1370,16 @@ async function handleBlackjackEndSlash(messageOrInteraction, playerWon, reason) 
     
     if (dealerValue > 21) {
       playerWon = true;
-      reason = 'Dealer busted!';
+      reason = game.isDoubleDown ? 'Dealer busted! (Double Down WIN!)' : 'Dealer busted!';
     } else if (dealerValue > playerValue) {
       playerWon = false;
-      reason = 'Dealer wins!';
+      reason = game.isDoubleDown ? 'Dealer wins (Double Down LOSS)' : 'Dealer wins!';
     } else if (playerValue > dealerValue) {
       playerWon = true;
-      reason = 'You win!';
+      reason = game.isDoubleDown ? 'You win! (Double Down SUCCESS!)' : 'You win!';
     } else {
       playerWon = null;
-      reason = 'Push (tie)!';
+      reason = game.isDoubleDown ? 'Push (tie) - Double Down returned!' : 'Push (tie)!';
     }
   }
   
@@ -1453,6 +1398,9 @@ async function handleBlackjackEndSlash(messageOrInteraction, playerWon, reason) 
   savePoints(); // Save after blackjack
   blackjackGames.delete(game.userId);
   
+  const resultText = playerWon === true ? `+${game.betAmount} points` : playerWon === false ? `-${game.betAmount} points` : 'No change';
+  const doubleDownText = game.isDoubleDown ? ' 💰 (DOUBLED!)' : '';
+  
   const embed = new EmbedBuilder()
     .setColor(playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFFF00)
     .setTitle('🃏 Blackjack - Game Over')
@@ -1460,12 +1408,16 @@ async function handleBlackjackEndSlash(messageOrInteraction, playerWon, reason) 
     .addFields(
       { name: `Your Hand (${getHandValue(game.playerHand)})`, value: game.playerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
       { name: `Dealer Hand (${getHandValue(game.dealerHand)})`, value: game.dealerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
-      { name: 'Result', value: playerWon === true ? `+${game.betAmount} points` : playerWon === false ? `-${game.betAmount} points` : 'No change', inline: true },
+      { name: 'Bet Amount', value: `${game.betAmount} points${doubleDownText}`, inline: true },
+      { name: 'Result', value: resultText, inline: true },
       { name: 'New Balance', value: `${newPoints} points`, inline: true }
     )
+    .setFooter({ 
+      text: game.isDoubleDown ? '💰 Double Down played!' : '🃏 Standard blackjack game'
+    })
     .setTimestamp();
   
-  await messageOrInteraction.update({ embeds: [embed], components: [] });
+  await messageOrInteraction.editReply({ embeds: [embed], components: [] });
 }
 
 client.login(process.env.DISCORD_TOKEN); 
