@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -702,6 +702,34 @@ client.on(Events.InteractionCreate, async (interaction) => {
     
     console.log(`${interaction.user.username} sent ${amount} points to ${targetUser.username}`);
   }
+
+  if (interaction.commandName === 'remove-user') {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: '❌ You do not have permission to use this command.', ephemeral: true });
+    }
+
+    const userToRemove = interaction.options.getUser('user');
+    if (!userToRemove) {
+      return interaction.reply({ content: 'Invalid user provided.', ephemeral: true });
+    }
+    const userIdToRemove = userToRemove.id;
+
+    if (vouchPoints.has(userIdToRemove)) {
+        const removedPoints = vouchPoints.get(userIdToRemove);
+        vouchPoints.delete(userIdToRemove);
+        await savePoints(); // Persist the change
+
+        return interaction.reply({
+            content: `✅ Successfully removed **${userToRemove.username}** and their **${removedPoints}** points from the system. The leaderboard is now updated.`,
+            ephemeral: true
+        });
+    } else {
+        return interaction.reply({
+            content: `🤔 User **${userToRemove.username}** was not found in the points system.`,
+            ephemeral: true
+        });
+    }
+  }
 });
 
 // Gambling functionality
@@ -1077,15 +1105,22 @@ async function playBlackjack(message, betAmount) {
 }
 
 // BULLETPROOF BLACKJACK BUTTON HANDLER
-async function handleBlackjackButton(interaction, userId) {
+async function handleBlackjackButton(interaction, clickerId) {
   try {
     // ALWAYS defer first - this prevents ANY timeout issues
     await interaction.deferUpdate().catch(() => {}); // Ignore if already deferred
+
+    const gameOwnerId = interaction.customId.split('_')[2];
+
+    // Check if the person who clicked is the person who started the game
+    if (clickerId !== gameOwnerId) {
+      return interaction.followUp({ content: 'This is not your game! Start your own with `/bj`.', ephemeral: true });
+    }
     
-    const game = blackjackGames.get(userId);
+    const game = blackjackGames.get(gameOwnerId);
     if (!game) {
       return await safeEditReply(interaction, {
-        embeds: [createErrorEmbed('🃏 Game not found!', 'Your blackjack game has expired or was not found.')],
+        embeds: [createErrorEmbed('🃏 Game not found!', 'Your blackjack game has expired or was not found. This can happen after 10 minutes of inactivity.')],
         components: []
       });
     }
@@ -1482,7 +1517,5 @@ async function handleBlackjackEnd(message, playerWon, reason) {
   await message.edit({ embeds: [embed] });
   message.reactions.removeAll();
 }
-
-
 
 client.login(process.env.DISCORD_TOKEN); 

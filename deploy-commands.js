@@ -1,4 +1,4 @@
-const { REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 require('dotenv').config();
 
 console.log('DISCORD_TOKEN loaded:', process.env.DISCORD_TOKEN ? 'YES' : 'NO');
@@ -115,6 +115,16 @@ const commands = [
         .setDescription('Optional message to include with the transfer')
         .setRequired(false)
     ),
+  new SlashCommandBuilder()
+    .setName('remove-user')
+    .setDescription('ADMIN: Removes a user and their points from the system.')
+    .addUserOption(option =>
+      option
+        .setName('user')
+        .setDescription('The user to remove')
+        .setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map(command => command.toJSON());
 
 const rest = new REST().setToken(process.env.DISCORD_TOKEN);
