@@ -1534,8 +1534,7 @@ async function handleBlackjackEndSlash(interaction, playerWon, reason) {
   blackjackGames.delete(userId);
 }
 
-// Initialize storage and load points - this happens when the bot starts
-initializeStorage();
+// Load points when the bot starts
 loadPoints();
 
 client.login(process.env.DISCORD_TOKEN); 
