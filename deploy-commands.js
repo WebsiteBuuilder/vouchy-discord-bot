@@ -164,6 +164,14 @@ const commands = [
     .setName('hotkey-list')
     .setDescription('ADMIN: List all available custom commands.')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName('open')
+    .setDescription('ADMIN: Opens the store, making the order channel public.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName('close')
+    .setDescription('ADMIN: Closes the store, making the order channel private.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);

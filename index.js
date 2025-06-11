@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, ChannelType } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
@@ -683,6 +683,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   if (interaction.commandName === 'recount-vouches') {
     return await handleRecountVouches(interaction);
+  }
+
+  if (interaction.commandName === 'open') {
+    return handleStoreOpen(interaction);
+  }
+
+  if (interaction.commandName === 'close') {
+    return handleStoreClose(interaction);
   }
 
   if (interaction.commandName === 'remove-user') {
@@ -1608,6 +1616,87 @@ async function handleRecountVouches(interaction) {
         .setTimestamp();
 
     await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
+}
+
+// --- STORE MANAGEMENT FUNCTIONS ---
+
+async function handleStoreOpen(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You do not have permission for this.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+        const statusCategory = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'status' && c.type === ChannelType.GuildCategory);
+        const orderChannel = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'order-here');
+
+        if (!orderChannel) {
+            return interaction.editReply({ content: '❌ Could not find the `#order-here` channel.' });
+        }
+
+        let statusChannel;
+        if (statusCategory) {
+            statusChannel = statusCategory.children.cache.find(c => c.isTextBased());
+        }
+
+        // Update permissions for #order-here
+        const everyoneRole = interaction.guild.roles.everyone;
+        await orderChannel.permissionOverwrites.edit(everyoneRole, {
+            ViewChannel: true,
+            SendMessages: true,
+        });
+
+        // Rename status channel
+        if (statusChannel) {
+            await statusChannel.setName('🟢-status-open');
+        }
+
+        await interaction.editReply({ content: '✅ **Store is now OPEN!** The `#order-here` channel is public and the status has been updated.' });
+
+    } catch (error) {
+        console.error("Error opening store:", error);
+        await interaction.editReply({ content: '❌ An error occurred while trying to open the store. Please check my permissions.' });
+    }
+}
+
+async function handleStoreClose(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You do not have permission for this.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+        const statusCategory = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'status' && c.type === ChannelType.GuildCategory);
+        const orderChannel = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'order-here');
+
+        if (!orderChannel) {
+            return interaction.editReply({ content: '❌ Could not find the `#order-here` channel.' });
+        }
+
+        let statusChannel;
+        if (statusCategory) {
+            statusChannel = statusCategory.children.cache.find(c => c.isTextBased());
+        }
+
+        // Update permissions for #order-here
+        const everyoneRole = interaction.guild.roles.everyone;
+        await orderChannel.permissionOverwrites.edit(everyoneRole, {
+            ViewChannel: false,
+        });
+
+        // Rename status channel
+        if (statusChannel) {
+            await statusChannel.setName('🔴-status-closed');
+        }
+
+        await interaction.editReply({ content: '✅ **Store is now CLOSED!** The `#order-here` channel is private and the status has been updated.' });
+
+    } catch (error) {
+        console.error("Error closing store:", error);
+        await interaction.editReply({ content: '❌ An error occurred while trying to close the store. Please check my permissions.' });
+    }
 }
 
 // --- HOTKEY HELPER FUNCTIONS ---
