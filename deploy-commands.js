@@ -16,6 +16,9 @@ if (!process.env.DISCORD_TOKEN || !clientId) {
 
 const commands = [
   new SlashCommandBuilder()
+    .setName('vouch')
+    .setDescription('Posts a pre-written message to encourage users to vouch.'),
+  new SlashCommandBuilder()
     .setName('points')
     .setDescription('💰 Check how many vouch points you or someone else has')
     .addUserOption(option =>
@@ -129,6 +132,38 @@ const commands = [
     .setName('recount-vouches')
     .setDescription('ADMIN: Recalculates all points by scanning the vouch channel history.')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  // Hotkey Commands
+  new SlashCommandBuilder()
+    .setName('hotkey-create')
+    .setDescription('ADMIN: Create a new custom command (hotkey).')
+    .addStringOption(option =>
+      option
+        .setName('name')
+        .setDescription('The name of the new command (e.g., "promo"). No spaces or special characters.')
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option
+        .setName('message')
+        .setDescription('The message the bot will post when this command is used.')
+        .setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName('hotkey-delete')
+    .setDescription('ADMIN: Delete a custom command.')
+    .addStringOption(option =>
+      option
+        .setName('name')
+        .setDescription('The name of the command to delete.')
+        .setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName('hotkey-list')
+    .setDescription('ADMIN: List all available custom commands.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
@@ -146,4 +181,6 @@ const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
   } catch (error) {
     console.error(error);
   }
-})(); 
+})();
+
+module.exports = { commands }; 

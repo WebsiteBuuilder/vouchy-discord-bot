@@ -8,6 +8,7 @@ const dataDir = process.env.DATA_DIR || '/app/data';
 const pointsPath = path.join(dataDir, 'points.json');
 const backupPath = path.join(dataDir, 'points-backup.json');
 const activeGamesPath = path.join(dataDir, 'active-games.json');
+const hotkeysPath = path.join(dataDir, 'hotkeys.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(dataDir)) {
@@ -16,6 +17,7 @@ if (!fs.existsSync(dataDir)) {
 
 let vouchPoints = new Map();
 let blackjackGames = new Map();
+let hotkeys = new Map();
 
 // Function to load vouch points
 function loadPoints() {
@@ -58,6 +60,22 @@ function loadBlackjackGames() {
     }
 }
 
+// Function to load hotkeys
+function loadHotkeys() {
+    try {
+        if (fs.existsSync(hotkeysPath)) {
+            const data = fs.readFileSync(hotkeysPath, 'utf8');
+            const parsedData = JSON.parse(data);
+            hotkeys = new Map(Object.entries(parsedData));
+            console.log(`✅ Loaded ${hotkeys.size} custom hotkeys from ${hotkeysPath}`);
+        } else {
+            console.log(`📝 No hotkeys file found. Starting fresh.`);
+            fs.writeFileSync(hotkeysPath, JSON.stringify({}));
+        }
+    } catch (error) {
+        console.error('❌ Error loading hotkeys:', error);
+    }
+}
 
 // Function to save vouch points (with backup)
 async function savePoints() {
@@ -80,9 +98,20 @@ async function saveBlackjackGames() {
     }
 }
 
+// Function to save hotkeys
+async function saveHotkeys() {
+    try {
+        const data = JSON.stringify(Object.fromEntries(hotkeys), null, 2);
+        fs.writeFileSync(hotkeysPath, data);
+    } catch (error) {
+        console.error('❌ Error saving hotkeys:', error);
+    }
+}
+
 // Load all data on startup
 loadPoints();
 loadBlackjackGames();
+loadHotkeys();
 
 // Handle button interactions for gambling
 // This function is now mostly legacy or for non-blackjack buttons
@@ -291,6 +320,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   if (!interaction.isChatInputCommand()) return;
+
+  // --- HOTKEY EXECUTION ---
+  if (hotkeys.has(interaction.commandName)) {
+    const message = hotkeys.get(interaction.commandName);
+    // Allow for variables like {user} in the message
+    const finalMessage = message.replace(/{user}/g, `<@${interaction.user.id}>`);
+    return interaction.reply(finalMessage);
+  }
+
+  if (interaction.commandName === 'vouch') {
+    // Find the first channel with 'vouch' in its name to link to it.
+    const vouchChannel = interaction.guild.channels.cache.find(c => c.name.toLowerCase().includes('vouch'));
+    const vouchChannelMention = vouchChannel ? `<#${vouchChannel.id}>` : '#vouch';
+
+    const replyMessage = `Thanks for ordering with Quikbites! Leave a pic in ${vouchChannelMention} to gain points that you can use to get free food 🥤`;
+
+    return interaction.reply(replyMessage);
+  }
 
   if (interaction.commandName === 'points') {
     const targetUser = interaction.options.getUser('user') || interaction.user;
@@ -619,6 +666,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await interaction.reply({ embeds: [embed] });
     
     console.log(`${interaction.user.username} sent ${amount} points to ${targetUser.username}`);
+  }
+
+  // --- HOTKEY MANAGEMENT ---
+  if (interaction.commandName === 'hotkey-create') {
+    return handleHotkeyCreate(interaction);
+  }
+
+  if (interaction.commandName === 'hotkey-delete') {
+    return handleHotkeyDelete(interaction);
+  }
+
+  if (interaction.commandName === 'hotkey-list') {
+    return handleHotkeyList(interaction);
   }
 
   if (interaction.commandName === 'recount-vouches') {
@@ -1194,7 +1254,7 @@ async function endGame(interaction, game, playerWon, reason) {
   const color = playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFD700;
   const resultEmbed = new EmbedBuilder()
     .setColor(color)
-    .setTitle('🃏 BLACKJACK - GAME OVER')
+    .setTitle('🃏 Blackjack - GAME OVER')
     .setDescription(reason)
     .addFields(
       { name: '🎴 Your Hand', value: `${game.playerHand.map(card => `${card.rank}${card.suit}`).join(' ')}\n**Total: ${getHandValue(game.playerHand)}**`, inline: true },
@@ -1548,6 +1608,124 @@ async function handleRecountVouches(interaction) {
         .setTimestamp();
 
     await interaction.followUp({ embeds: [summaryEmbed], ephemeral: true });
+}
+
+// --- HOTKEY HELPER FUNCTIONS ---
+
+// Function to dynamically update slash commands with Discord
+async function updateDiscordCommands(guild) {
+    const { REST } = require('@discordjs/rest');
+    const { Routes } = require('discord-api-types/v9');
+    
+    // This is a bit of a hack to avoid a circular dependency or rewriting the command list
+    // We get the static commands by requiring the deploy script and accessing the exported commands
+    delete require.cache[require.resolve('./deploy-commands.js')]; // Clear cache to get fresh data
+    const staticCommands = require('./deploy-commands.js').commands;
+
+    const dynamicCommands = Array.from(hotkeys.entries()).map(([name, message]) => {
+        return new SlashCommandBuilder()
+            .setName(name)
+            .setDescription(message.length > 100 ? message.substring(0, 97) + '...' : message)
+            .toJSON();
+    });
+
+    const allCommands = staticCommands.concat(dynamicCommands);
+    const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
+    const clientId = process.env.CLIENT_ID || process.env.DISCORD_CLIENT_ID;
+
+    try {
+        console.log('🔄 Started refreshing application (/) commands.');
+        await rest.put(
+            Routes.applicationGuildCommands(clientId, guild.id),
+            { body: allCommands },
+        );
+        console.log('✅ Successfully reloaded application (/) commands.');
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to refresh commands:', error);
+        return false;
+    }
+}
+
+async function handleHotkeyCreate(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You do not have permission for this.', ephemeral: true });
+    }
+
+    const name = interaction.options.getString('name').toLowerCase();
+    const message = interaction.options.getString('message');
+
+    // Discord command name validation
+    if (!/^[a-z0-9_-]{1,32}$/.test(name)) {
+        return interaction.reply({
+            content: '❌ Invalid command name. It must be 1-32 characters long and contain only lowercase letters, numbers, hyphens, or underscores.',
+            ephemeral: true,
+        });
+    }
+
+    if (hotkeys.has(name)) {
+        return interaction.reply({ content: `❌ A hotkey named \`/${name}\` already exists. Use a different name or delete the existing one first.`, ephemeral: true });
+    }
+
+    hotkeys.set(name, message);
+    await saveHotkeys();
+    await interaction.deferReply({ ephemeral: true });
+
+    const success = await updateDiscordCommands(interaction.guild);
+
+    if (success) {
+        await interaction.editReply({ content: `✅ Successfully created the \`/${name}\` command!` });
+    } else {
+        await interaction.editReply({ content: '❌ Created the hotkey, but failed to update Discord. The command may not appear. Try again or check the logs.' });
+    }
+}
+
+async function handleHotkeyDelete(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You do not have permission for this.', ephemeral: true });
+    }
+
+    const name = interaction.options.getString('name').toLowerCase();
+
+    if (!hotkeys.has(name)) {
+        return interaction.reply({ content: `❌ No hotkey named \`/${name}\` found.`, ephemeral: true });
+    }
+
+    hotkeys.delete(name);
+    await saveHotkeys();
+    await interaction.deferReply({ ephemeral: true });
+
+    const success = await updateDiscordCommands(interaction.guild);
+
+    if (success) {
+        await interaction.editReply({ content: `✅ Successfully deleted the \`/${name}\` command!` });
+    } else {
+        await interaction.editReply({ content: '❌ Deleted the hotkey, but failed to update Discord. The command may still appear. Try again or check the logs.' });
+    }
+}
+
+async function handleHotkeyList(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You do not have permission for this.', ephemeral: true });
+    }
+
+    if (hotkeys.size === 0) {
+        return interaction.reply({ content: 'ℹ️ You have not created any hotkeys yet. Use `/hotkey-create` to start.', ephemeral: true });
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle('Custom Hotkey Commands')
+        .setDescription('Here are all the custom commands you have created.');
+
+    let description = '';
+    for (const [name, message] of hotkeys) {
+        const shortMessage = message.length > 200 ? message.substring(0, 197) + '...' : message;
+        description += `**\`/${name}\`**\n>>> ${shortMessage}\n\n`;
+    }
+    embed.setDescription(description);
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 client.login(process.env.DISCORD_TOKEN); 
