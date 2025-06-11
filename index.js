@@ -3,295 +3,122 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// UNBREAKABLE PERSISTENCE SYSTEM - Multiple redundant storage locations
-const STORAGE_STRATEGY = {
-  // Railway volume mount (if available)
-  railway: '/app/data',
-  // Local project directory (always works)
-  local: './data',
-  // Root project directory (fallback)
-  root: './',
-  // System temp (emergency)
-  temp: '/tmp',
-  // Railway's persistent storage environment variable path
-  railwayPersistent: process.env.RAILWAY_VOLUME_MOUNT_PATH || '/data'
-};
-
-const BACKUP_FILES = ['points.json', 'points-backup.json', 'points-emergency.json', 'points-recovery.json'];
-let ACTIVE_STORAGE_PATHS = [];
-let SUCCESSFUL_SAVE_LOCATIONS = [];
-
-// Initialize unbreakable storage system
-function initializeUnbreakableStorage() {
-  console.log('🛡️ Initializing UNBREAKABLE storage system...');
-  
-  ACTIVE_STORAGE_PATHS = [];
-  
-  // Test all storage locations
-  Object.entries(STORAGE_STRATEGY).forEach(([name, location]) => {
-    try {
-      // Ensure directory exists
-      if (!fs.existsSync(location)) {
-        fs.mkdirSync(location, { recursive: true });
-      }
-      
-      // Test write permissions with unique test file
-      const testFile = path.join(location, `test-${Date.now()}.json`);
-      const testData = { test: true, timestamp: Date.now(), location: name };
-      fs.writeFileSync(testFile, JSON.stringify(testData));
-      
-      // Test read permissions
-      const readData = JSON.parse(fs.readFileSync(testFile, 'utf8'));
-      
-      // Clean up test file
-      fs.unlinkSync(testFile);
-      
-      // This location is working
-      ACTIVE_STORAGE_PATHS.push({ name, path: location });
-      console.log(`✅ Storage location "${name}" active: ${location}`);
-      
-    } catch (error) {
-      console.log(`❌ Storage location "${name}" failed: ${location} - ${error.message}`);
-    }
-  });
-  
-  if (ACTIVE_STORAGE_PATHS.length === 0) {
-    console.error('💥 CRITICAL: NO STORAGE LOCATIONS AVAILABLE!');
-    throw new Error('Cannot initialize storage - no writable locations found');
-  }
-  
-  console.log(`🔒 ${ACTIVE_STORAGE_PATHS.length} storage locations active and ready`);
-  return true;
-}
-
+// Persistent storage for points - use Railway volume mount
+const VOLUME_PATH = '/app/data';
+const POINTS_FILE = path.join(VOLUME_PATH, 'points.json');
+const BACKUP_POINTS_FILE = path.join(VOLUME_PATH, 'points-backup.json');
 const vouchPoints = new Map();
 
-// UNBREAKABLE POINTS LOADING - scans ALL locations for data
-function loadPointsUnbreakable() {
-  console.log('📥 Loading points with UNBREAKABLE system...');
-  
-  if (ACTIVE_STORAGE_PATHS.length === 0) {
-    initializeUnbreakableStorage();
-  }
-  
-  let pointsLoaded = false;
-  let bestDataSource = null;
-  let maxPointsFound = 0;
-  
-  // Scan ALL storage locations for point files
-  for (const storage of ACTIVE_STORAGE_PATHS) {
-    for (const filename of BACKUP_FILES) {
-      const filePath = path.join(storage.path, filename);
-      
-      try {
-        if (fs.existsSync(filePath)) {
-          console.log(`🔍 Scanning: ${storage.name}/${filename}`);
-          
-          const data = fs.readFileSync(filePath, 'utf8');
-          if (!data.trim()) {
-            console.log(`⚠️ Empty file: ${filePath}`);
-            continue;
-          }
-          
-          const pointsData = JSON.parse(data);
-          let userCount = 0;
-          let totalPoints = 0;
-          
-          // Count users and points to find the best data source
-          if (Array.isArray(pointsData)) {
-            userCount = pointsData.length;
-            totalPoints = pointsData.reduce((sum, [, points]) => sum + (points || 0), 0);
-          } else if (typeof pointsData === 'object') {
-            userCount = Object.keys(pointsData).length;
-            totalPoints = Object.values(pointsData).reduce((sum, points) => sum + (points || 0), 0);
-          }
-          
-          console.log(`📊 Found ${userCount} users with ${totalPoints} total points in ${storage.name}/${filename}`);
-          
-          // Use the data source with the most users/points (most recent/complete)
-          if (userCount > maxPointsFound) {
-            maxPointsFound = userCount;
-            bestDataSource = { storage, filename, data: pointsData, userCount, totalPoints };
-          }
-        }
-      } catch (error) {
-        console.error(`❌ Error reading ${filePath}: ${error.message}`);
-      }
-    }
-  }
-  
-  if (bestDataSource) {
-    console.log(`🏆 Best data source: ${bestDataSource.storage.name}/${bestDataSource.filename}`);
-    console.log(`📈 Loading ${bestDataSource.userCount} users with ${bestDataSource.totalPoints} total points`);
-    
-    // Clear existing data
-    vouchPoints.clear();
-    
-    // Load the best data
-    if (Array.isArray(bestDataSource.data)) {
-      bestDataSource.data.forEach(([userId, points]) => {
-        if (userId && typeof points === 'number') {
-          vouchPoints.set(userId, points);
-        }
-      });
-    } else if (typeof bestDataSource.data === 'object') {
-      Object.entries(bestDataSource.data).forEach(([userId, points]) => {
-        if (userId && typeof points === 'number') {
-          vouchPoints.set(userId, points);
-        }
-      });
-    }
-    
-    pointsLoaded = true;
-    console.log(`✅ Successfully loaded ${vouchPoints.size} users from best source`);
-    
-    // Immediately create backups in all locations
-    savePointsUnbreakable();
-    
-  } else {
-    console.log('📋 No existing points found - starting fresh');
-  }
-  
-  console.log(`🎯 Points system ready with ${vouchPoints.size} users`);
-  console.log(`💾 Data will be saved to ${ACTIVE_STORAGE_PATHS.length} locations for maximum safety`);
-}
-
-// UNBREAKABLE POINTS SAVING - saves to ALL available locations
-function savePointsUnbreakable() {
-  const startTime = Date.now();
-  console.log(`💾 UNBREAKABLE SAVE: Saving ${vouchPoints.size} users to ALL locations...`);
-  
-  const pointsObj = {};
-  vouchPoints.forEach((points, userId) => {
-    pointsObj[userId] = points;
-  });
-  
-  const jsonData = JSON.stringify(pointsObj, null, 2);
-  const metadata = {
-    timestamp: Date.now(),
-    userCount: vouchPoints.size,
-    totalPoints: Array.from(vouchPoints.values()).reduce((sum, points) => sum + points, 0),
-    version: "unbreakable-v1"
-  };
-  
-  SUCCESSFUL_SAVE_LOCATIONS = [];
-  let saveErrors = [];
-  
-  // Save to ALL active storage locations
-  for (const storage of ACTIVE_STORAGE_PATHS) {
-    try {
-      const locationSuccess = saveToLocation(storage, jsonData, metadata);
-      if (locationSuccess) {
-        SUCCESSFUL_SAVE_LOCATIONS.push(storage.name);
-        console.log(`✅ Saved to ${storage.name}: ${storage.path}`);
-      }
-    } catch (error) {
-      const errorMsg = `Failed to save to ${storage.name}: ${error.message}`;
-      saveErrors.push(errorMsg);
-      console.error(`❌ ${errorMsg}`);
-    }
-  }
-  
-  const saveTime = Date.now() - startTime;
-  
-  if (SUCCESSFUL_SAVE_LOCATIONS.length > 0) {
-    console.log(`🎉 SAVE SUCCESS: Data saved to ${SUCCESSFUL_SAVE_LOCATIONS.length}/${ACTIVE_STORAGE_PATHS.length} locations in ${saveTime}ms`);
-    console.log(`📍 Successful locations: ${SUCCESSFUL_SAVE_LOCATIONS.join(', ')}`);
-    return true;
-  } else {
-    console.error('💥 CRITICAL: ALL SAVE LOCATIONS FAILED!');
-    console.error('❌ Errors:', saveErrors);
-    
-    // Emergency console dump for manual recovery
-    console.log('🚨 EMERGENCY BACKUP - COPY THIS DATA:');
-    console.log('='.repeat(50));
-    console.log(JSON.stringify(pointsObj, null, 2));
-    console.log('='.repeat(50));
-    
-    return false;
-  }
-}
-
-// Helper function to save to a specific location
-function saveToLocation(storage, jsonData, metadata) {
-  const location = storage.path;
-  
-  // Ensure directory exists
-  if (!fs.existsSync(location)) {
-    fs.mkdirSync(location, { recursive: true });
-  }
-  
-  let filesWritten = 0;
-  
-  // Write to all backup files
-  for (const filename of BACKUP_FILES) {
-    try {
-      const filePath = path.join(location, filename);
-      fs.writeFileSync(filePath, jsonData);
-      filesWritten++;
-    } catch (error) {
-      console.error(`⚠️ Failed to write ${filename} in ${storage.name}: ${error.message}`);
-    }
-  }
-  
-  // Write metadata file
-  try {
-    const metadataPath = path.join(location, 'points-metadata.json');
-    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
-  } catch (error) {
-    console.error(`⚠️ Failed to write metadata in ${storage.name}: ${error.message}`);
-  }
-  
-  // Verify at least one file was written successfully
-  if (filesWritten > 0) {
-    // Verify data integrity
-    try {
-      const verifyPath = path.join(location, BACKUP_FILES[0]);
-      const verifyData = JSON.parse(fs.readFileSync(verifyPath, 'utf8'));
-      const verifyCount = Object.keys(verifyData).length;
-      
-      if (verifyCount === vouchPoints.size) {
-        return true;
-      } else {
-        throw new Error(`Verification failed: expected ${vouchPoints.size} users, got ${verifyCount}`);
-      }
-    } catch (error) {
-      throw new Error(`Verification failed: ${error.message}`);
-    }
-  }
-  
-  return false;
-}
-
-// Auto-save every 15 seconds for maximum safety
-setInterval(() => {
-  if (vouchPoints.size > 0) {
-    savePointsUnbreakable();
-  }
-}, 15000);
-
-// Initialize the unbreakable system immediately
-try {
-  initializeUnbreakableStorage();
-  loadPointsUnbreakable();
-} catch (error) {
-  console.error('💥 CRITICAL STORAGE ERROR:', error);
-  console.log('🚨 Starting with empty points - storage will be retried');
-}
-
-// Replace old functions with unbreakable versions
+// Load points from file on startup
 function loadPoints() {
-  loadPointsUnbreakable();
+  try {
+    // Ensure the volume directory exists
+    if (!fs.existsSync(VOLUME_PATH)) {
+      fs.mkdirSync(VOLUME_PATH, { recursive: true });
+      console.log(`📁 Created directory: ${VOLUME_PATH}`);
+    }
+    
+    // Try to load from main points file
+    if (fs.existsSync(POINTS_FILE)) {
+      try {
+        const data = fs.readFileSync(POINTS_FILE, 'utf8');
+        const pointsObj = JSON.parse(data);
+        Object.entries(pointsObj).forEach(([userId, points]) => {
+          vouchPoints.set(userId, points);
+        });
+        console.log(`✅ Loaded ${vouchPoints.size} user points from ${POINTS_FILE}`);
+        
+        // Create backup on successful load
+        fs.writeFileSync(BACKUP_POINTS_FILE, data);
+        console.log(`💾 Created backup at ${BACKUP_POINTS_FILE}`);
+        
+      } catch (error) {
+        console.error(`❌ Error reading main points file: ${error.message}`);
+        console.log(`🔄 Attempting to load from backup...`);
+        
+        // Try backup file
+        if (fs.existsSync(BACKUP_POINTS_FILE)) {
+          const backupData = fs.readFileSync(BACKUP_POINTS_FILE, 'utf8');
+          const pointsObj = JSON.parse(backupData);
+          Object.entries(pointsObj).forEach(([userId, points]) => {
+            vouchPoints.set(userId, points);
+          });
+          console.log(`✅ Loaded ${vouchPoints.size} user points from backup`);
+          
+          // Restore main file from backup
+          fs.writeFileSync(POINTS_FILE, backupData);
+          console.log(`🔄 Restored main points file from backup`);
+        }
+      }
+    } else {
+      console.log(`📋 No points file found at ${POINTS_FILE}, starting fresh`);
+      
+      // Check if backup exists
+      if (fs.existsSync(BACKUP_POINTS_FILE)) {
+        console.log(`🔄 Found backup file, restoring...`);
+        const backupData = fs.readFileSync(BACKUP_POINTS_FILE, 'utf8');
+        const pointsObj = JSON.parse(backupData);
+        Object.entries(pointsObj).forEach(([userId, points]) => {
+          vouchPoints.set(userId, points);
+        });
+        console.log(`✅ Loaded ${vouchPoints.size} user points from backup`);
+        
+        // Restore main file
+        fs.writeFileSync(POINTS_FILE, backupData);
+        console.log(`🔄 Restored main points file`);
+      }
+    }
+    
+    console.log(`🎯 Points tracking system ready with ${vouchPoints.size} users`);
+    
+  } catch (error) {
+    console.error('💥 Critical error loading points:', error);
+    console.log('🚀 Starting with empty points database');
+  }
 }
 
+// Save points to file with backup
 function savePoints() {
-  return savePointsUnbreakable();
+  try {
+    // Ensure the volume directory exists
+    if (!fs.existsSync(VOLUME_PATH)) {
+      fs.mkdirSync(VOLUME_PATH, { recursive: true });
+      console.log(`📁 Created directory: ${VOLUME_PATH}`);
+    }
+    
+    const pointsObj = {};
+    vouchPoints.forEach((points, userId) => {
+      pointsObj[userId] = points;
+    });
+    
+    const jsonData = JSON.stringify(pointsObj, null, 2);
+    
+    // Write to main file
+    fs.writeFileSync(POINTS_FILE, jsonData);
+    
+    // Write to backup file
+    fs.writeFileSync(BACKUP_POINTS_FILE, jsonData);
+    
+    console.log(`💾 Points saved successfully to ${POINTS_FILE} (${vouchPoints.size} users)`);
+    
+  } catch (error) {
+    console.error('❌ Error saving points:', error);
+    
+    // Try alternative method
+    try {
+      const pointsArray = Array.from(vouchPoints.entries());
+      fs.writeFileSync(path.join(VOLUME_PATH, 'points-emergency.json'), JSON.stringify(pointsArray));
+      console.log('🚨 Emergency backup created');
+    } catch (emergencyError) {
+      console.error('💥 Emergency backup also failed:', emergencyError);
+    }
+  }
 }
 
-// Initialize storage and load points when the module loads
-// This will happen automatically at startup
+// Call loadPoints when bot starts
+loadPoints();
 
-// Simple handler for legacy confirmation buttons
+// Handle button interactions for gambling
 async function handleButtonInteraction(interaction) {
   const userId = interaction.user.id;
   
@@ -323,6 +150,57 @@ async function handleButtonInteraction(interaction) {
     }
     // For blackjack_confirm, the collector in the slash command will handle it
     return;
+  }
+  
+  // Handle blackjack game buttons
+  if (interaction.customId.startsWith('blackjack_')) {
+    const game = blackjackGames.get(userId);
+    if (!game) {
+      return interaction.reply({ content: 'Game not found!', ephemeral: true });
+    }
+    
+    if (interaction.customId === 'blackjack_hit') {
+      // Hit
+      game.playerHand.push(drawCard(game.deck));
+      const playerValue = getHandValue(game.playerHand);
+      
+      if (playerValue > 21) {
+        await handleBlackjackEndSlash(interaction, false, 'Bust! You went over 21');
+      } else if (playerValue === 21) {
+        await handleBlackjackEndSlash(interaction, null, 'You got 21! Dealer\'s turn...');
+      } else {
+        const embed = createBlackjackEmbed(game, false);
+        const row = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId('blackjack_hit')
+              .setLabel('🃏 Hit')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId('blackjack_stand')
+              .setLabel('✋ Stand')
+              .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+              .setCustomId('blackjack_quit')
+              .setLabel('❌ Quit')
+              .setStyle(ButtonStyle.Danger)
+          );
+        await interaction.update({ embeds: [embed], components: [row] });
+      }
+    } else if (interaction.customId === 'blackjack_stand') {
+      // Stand
+      await handleBlackjackEndSlash(interaction, null, 'You stand. Dealer\'s turn...');
+    } else if (interaction.customId === 'blackjack_quit') {
+      // Quit
+      blackjackGames.delete(userId);
+      const embed = new EmbedBuilder()
+        .setColor(0xFF0000)
+        .setTitle('🃏 Blackjack - Game Quit')
+        .setDescription('Game cancelled. Your bet has been returned.')
+        .setTimestamp();
+      
+      await interaction.update({ embeds: [embed], components: [] });
+    }
   }
 }
 
@@ -478,21 +356,16 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 // Slash command to check points
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
-
-  // Handle button interactions
+client.on(Events.InteractionCreate, async (interaction) => {
+  // Handle button interactions for gambling games
   if (interaction.isButton()) {
-    if (interaction.customId.startsWith('bj_')) {
-      // Handle blackjack buttons
-      return handleBlackjackButtons(interaction);
-    }
-    return handleButtonInteraction(interaction);
+    await handleButtonInteraction(interaction);
+    return;
   }
 
-  const { commandName } = interaction;
+  if (!interaction.isChatInputCommand()) return;
 
-  if (commandName === 'points') {
+  if (interaction.commandName === 'points') {
     const targetUser = interaction.options.getUser('user') || interaction.user;
     const points = vouchPoints.get(targetUser.id) || 0;
     
@@ -505,7 +378,7 @@ client.on(Events.InteractionCreate, async interaction => {
     await interaction.reply({ embeds: [embed] });
   }
 
-  if (commandName === 'leaderboard') {
+  if (interaction.commandName === 'leaderboard') {
     const sortedPoints = Array.from(vouchPoints.entries())
       .sort(([,a], [,b]) => b - a)
       .slice(0, 10);
@@ -527,7 +400,7 @@ client.on(Events.InteractionCreate, async interaction => {
     await interaction.reply({ embeds: [embed] });
   }
 
-  if (commandName === 'addpoints') {
+  if (interaction.commandName === 'addpoints') {
     // Check if user has administrator permissions
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.reply({ 
@@ -564,7 +437,7 @@ client.on(Events.InteractionCreate, async interaction => {
     console.log(`${interaction.user.username} modified ${targetUser.username}'s points: ${currentPoints} -> ${newPoints} (${amount > 0 ? '+' : ''}${amount}) - ${reason}`);
   }
 
-  if (commandName === 'backup') {
+  if (interaction.commandName === 'backup') {
     // Check if user has administrator permissions
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.reply({ 
@@ -614,7 +487,7 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 
   // Roulette slash command
-  if (commandName === 'roulette') {
+  if (interaction.commandName === 'roulette') {
     const betAmount = interaction.options.getInteger('amount');
     const betType = interaction.options.getString('bet');
     const numberBet = interaction.options.getInteger('number');
@@ -676,7 +549,8 @@ client.on(Events.InteractionCreate, async interaction => {
     
     const response = await interaction.reply({ embeds: [confirmEmbed], components: [row] });
     
-    const collector = response.createMessageComponentCollector({ time: 300000 }); // 5 minutes instead of 30 seconds
+    // Store bet info for confirmation
+    const collector = response.createMessageComponentCollector({ time: 30000 });
     
     collector.on('collect', async i => {
       if (i.user.id !== userId) {
@@ -684,10 +558,8 @@ client.on(Events.InteractionCreate, async interaction => {
       }
       
       if (i.customId === 'roulette_confirm') {
-        collector.stop('game_started'); // Stop the confirmation collector
         await playRouletteSlash(i, betAmount, finalBetType);
       } else {
-        collector.stop('cancelled');
         const cancelEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
           .setTitle('❌ Bet Cancelled')
@@ -698,22 +570,21 @@ client.on(Events.InteractionCreate, async interaction => {
       }
     });
     
-    collector.on('end', (collected, reason) => {
-      if (reason === 'time') {
-        // Only show timeout if the user didn't start a game or cancel
+    collector.on('end', collected => {
+      if (collected.size === 0) {
         const timeoutEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
-          .setTitle('⏰ Bet Timeout')
-          .setDescription('Your roulette bet confirmation timed out.')
+          .setTitle('⏰ Bet Expired')
+          .setDescription('Your roulette bet has expired.')
           .setTimestamp();
         
-        interaction.editReply({ embeds: [timeoutEmbed], components: [] }).catch(() => {});
+        interaction.editReply({ embeds: [timeoutEmbed], components: [] });
       }
     });
   }
 
   // Blackjack slash command
-  if (commandName === 'blackjack') {
+  if (interaction.commandName === 'blackjack') {
     const betAmount = interaction.options.getInteger('amount');
     const userId = interaction.user.id;
     const userPoints = vouchPoints.get(userId) || 0;
@@ -766,7 +637,7 @@ client.on(Events.InteractionCreate, async interaction => {
     
     const response = await interaction.reply({ embeds: [confirmEmbed], components: [row] });
     
-    const collector = response.createMessageComponentCollector({ time: 300000 }); // 5 minutes instead of 30 seconds
+    const collector = response.createMessageComponentCollector({ time: 30000 });
     
     collector.on('collect', async i => {
       if (i.user.id !== userId) {
@@ -774,10 +645,8 @@ client.on(Events.InteractionCreate, async interaction => {
       }
       
       if (i.customId === 'blackjack_confirm') {
-        collector.stop('game_started'); // Stop the confirmation collector
         await playBlackjackSlash(i, betAmount);
       } else {
-        collector.stop('cancelled');
         const cancelEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
           .setTitle('❌ Bet Cancelled')
@@ -788,22 +657,21 @@ client.on(Events.InteractionCreate, async interaction => {
       }
     });
     
-    collector.on('end', (collected, reason) => {
-      if (reason === 'time') {
-        // Only show timeout if the user didn't start a game or cancel
+    collector.on('end', collected => {
+      if (collected.size === 0) {
         const timeoutEmbed = new EmbedBuilder()
           .setColor(0xFF0000)
-          .setTitle('⏰ Bet Timeout')
-          .setDescription('Your blackjack bet confirmation timed out.')
+          .setTitle('⏰ Bet Expired')
+          .setDescription('Your blackjack bet has expired.')
           .setTimestamp();
         
-        interaction.editReply({ embeds: [timeoutEmbed], components: [] }).catch(() => {});
+        interaction.editReply({ embeds: [timeoutEmbed], components: [] });
       }
     });
   }
 
   // Send points slash command
-  if (commandName === 'send') {
+  if (interaction.commandName === 'send') {
     const targetUser = interaction.options.getUser('user');
     const amount = interaction.options.getInteger('amount');
     const message = interaction.options.getString('message') || '';
@@ -961,7 +829,8 @@ async function playRoulette(message, betAmount, betType) {
   message.reply({ embeds: [embed] });
 }
 
-// REALISTIC PHYSICS-BASED ROULETTE - Authentic casino experience
+// Slash command version of roulette
+// IMMERSIVE REALISTIC ROULETTE - Authentic casino experience with physics
 async function playRouletteSlash(interaction, betAmount, betType) {
   const userId = interaction.user.id;
   
@@ -1092,7 +961,7 @@ async function playRouletteSlash(interaction, betAmount, betType) {
       .setTimestamp();
 
     await interaction.editReply({ embeds: [physicsEmbed] });
-    await new Promise(resolve => setTimeout(resolve, 800));
+    await new Promise(resolve => setTimeout(resolve, 900));
   }
 
   // STAGE 3: Final Moments - Ball Settling
@@ -1121,7 +990,7 @@ async function playRouletteSlash(interaction, betAmount, betType) {
     .setTimestamp();
 
   await interaction.editReply({ embeds: [finalMomentsEmbed] });
-  await new Promise(resolve => setTimeout(resolve, 1200));
+  await new Promise(resolve => setTimeout(resolve, 1300));
 
   // STAGE 4: Dramatic Result with Authentic Layout
   const realRouletteWheel = `
@@ -1233,7 +1102,7 @@ async function playBlackjack(message, betAmount) {
   await reply.react('❌'); // quit
 }
 
-// Completely rebuilt blackjack system - 100% bulletproof
+// Slash command version of blackjack
 async function playBlackjackSlash(interaction, betAmount) {
   const userId = interaction.user.id;
   
@@ -1252,288 +1121,152 @@ async function playBlackjackSlash(interaction, betAmount) {
   };
   
   blackjackGames.set(userId, game);
-
-  // Start with dealing animation
-  const dealEmbed = new EmbedBuilder()
-    .setColor(0x0099FF)
-    .setTitle('🃏 Blackjack - Dealing Cards')
-    .setDescription('🎴 **SHUFFLING AND DEALING** 🎴\n\n```\n🃁🃑 Your cards incoming...\n🃆❓ Dealer gets 2 cards\n```')
-    .addFields({ name: 'Bet Amount', value: `${betAmount} points` })
-    .setTimestamp();
-
-  await interaction.update({ embeds: [dealEmbed], components: [] });
-  await new Promise(resolve => setTimeout(resolve, 2000));
-
+  
   const playerValue = getHandValue(playerHand);
   
-  // Check for natural blackjack
   if (playerValue === 21) {
-    const blackjackEmbed = new EmbedBuilder()
-      .setColor(0xFFD700)
-      .setTitle('🎉 BLACKJACK! 🎉')
-      .setDescription('🃏 **NATURAL 21 - INSTANT WIN!** 🃏')
-      .addFields(
-        { name: 'Your Hand', value: createAnimatedHand(playerHand, true), inline: false },
-        { name: 'Result', value: `+${betAmount} points`, inline: true }
-      )
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [blackjackEmbed], components: [] });
-    return handleBlackjackEndSlash(interaction, true, 'Natural Blackjack!');
+    // Blackjack!
+    return handleBlackjackEndSlash(interaction, true, 'Blackjack! 🎉');
   }
   
-  // Show initial game state and set up buttons
-  await showBlackjackGame(interaction, game);
-}
-
-// Show the current game state with buttons
-async function showBlackjackGame(interaction, game) {
-  const embed = createAnimatedBlackjackEmbed(game, false);
+  const embed = createBlackjackEmbed(game, false);
   const row = new ActionRowBuilder()
     .addComponents(
-      new ButtonBuilder().setCustomId(`bj_hit_${game.userId}`).setLabel('🃏 Hit').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(`bj_stand_${game.userId}`).setLabel('✋ Stand').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`bj_double_${game.userId}`).setLabel('⬆️ Double').setStyle(ButtonStyle.Success).setDisabled(game.playerHand.length > 2),
-      new ButtonBuilder().setCustomId(`bj_quit_${game.userId}`).setLabel('❌ Quit').setStyle(ButtonStyle.Danger)
+      new ButtonBuilder()
+        .setCustomId('blackjack_hit')
+        .setLabel('🃏 Hit')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('blackjack_stand')
+        .setLabel('✋ Stand')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('blackjack_quit')
+        .setLabel('❌ Quit')
+        .setStyle(ButtonStyle.Danger)
     );
   
-  await interaction.editReply({ embeds: [embed], components: [row] });
-}
-
-// Handle all blackjack button interactions
-async function handleBlackjackButtons(interaction) {
-  const customId = interaction.customId;
-  const userId = interaction.user.id;
+  const reply = await interaction.update({ embeds: [embed], components: [row] });
   
-  // Extract action and check if it's for this user
-  if (!customId.startsWith('bj_') || !customId.endsWith(`_${userId}`)) {
-    return interaction.reply({ content: 'This is not your game!', ephemeral: true });
-  }
+  // Set up button collector
+  const collector = reply.createMessageComponentCollector({ time: 300000 }); // 5 minutes
   
-  const action = customId.split('_')[1]; // hit, stand, double, quit
-  const game = blackjackGames.get(userId);
-  
-  if (!game) {
-    return interaction.reply({ content: '❌ Game expired! Start a new one with /blackjack', ephemeral: true });
-  }
-  
-  // Defer the interaction immediately
-  await interaction.deferUpdate();
-  
-  try {
-    if (action === 'hit') {
-      await handleHit(interaction, game);
-    } else if (action === 'stand') {
-      await handleStand(interaction, game);
-    } else if (action === 'double') {
-      await handleDouble(interaction, game);
-    } else if (action === 'quit') {
-      await handleQuit(interaction, game);
+  collector.on('collect', async i => {
+    if (i.user.id !== userId) {
+      return i.reply({ content: 'This is not your game!', ephemeral: true });
     }
-  } catch (error) {
-    console.error('Blackjack button error:', error);
-    try {
-      await interaction.followUp({ content: '❌ Something went wrong! Game reset.', ephemeral: true });
+    
+    const currentGame = blackjackGames.get(userId);
+    if (!currentGame) {
+      return i.reply({ content: 'Game not found!', ephemeral: true });
+    }
+    
+    if (i.customId === 'blackjack_hit') {
+      // Hit
+      currentGame.playerHand.push(drawCard(currentGame.deck));
+      const playerValue = getHandValue(currentGame.playerHand);
+      
+      if (playerValue > 21) {
+        await handleBlackjackEndSlash(i, false, 'Bust! You went over 21');
+      } else if (playerValue === 21) {
+        await handleBlackjackEndSlash(i, null, 'You got 21! Dealer\'s turn...');
+      } else {
+        const embed = createBlackjackEmbed(currentGame, false);
+        const row = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId('blackjack_hit')
+              .setLabel('🃏 Hit')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId('blackjack_stand')
+              .setLabel('✋ Stand')
+              .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+              .setCustomId('blackjack_quit')
+              .setLabel('❌ Quit')
+              .setStyle(ButtonStyle.Danger)
+          );
+        await i.update({ embeds: [embed], components: [row] });
+      }
+    } else if (i.customId === 'blackjack_stand') {
+      // Stand
+      await handleBlackjackEndSlash(i, null, 'You stand. Dealer\'s turn...');
+    } else if (i.customId === 'blackjack_quit') {
+      // Quit
       blackjackGames.delete(userId);
-    } catch (e) {
-      console.error('Error handling error:', e);
+      const embed = new EmbedBuilder()
+        .setColor(0xFF0000)
+        .setTitle('🃏 Blackjack - Game Quit')
+        .setDescription('Game cancelled. Your bet has been returned.')
+        .setTimestamp();
+      
+      await i.update({ embeds: [embed], components: [] });
     }
-  }
+  });
+  
+  collector.on('end', () => {
+    if (blackjackGames.has(userId)) {
+      blackjackGames.delete(userId);
+    }
+  });
 }
 
-// Handle hit action
-async function handleHit(interaction, game) {
-  // Draw card animation
-  const drawEmbed = new EmbedBuilder()
-    .setColor(0xFFD700)
-    .setTitle('🃏 Drawing Card...')
-    .setDescription('🎴 **DEALING YOU A CARD** 🎴\n\n🎯 *Here it comes...*')
-    .setTimestamp();
+// Handle blackjack reactions
+client.on(Events.MessageReactionAdd, async (reaction, user) => {
+  if (user.bot) return;
   
-  await interaction.editReply({ embeds: [drawEmbed], components: [] });
-  await new Promise(resolve => setTimeout(resolve, 1200));
+  const game = blackjackGames.get(user.id);
+  if (!game) return;
   
-  // Add card to hand
-  game.playerHand.push(drawCard(game.deck));
-  const playerValue = getHandValue(game.playerHand);
+  if (reaction.message.author.id !== client.user.id) return;
   
-  if (playerValue > 21) {
-    // Bust!
-    const bustEmbed = new EmbedBuilder()
+  const emoji = reaction.emoji.name;
+  
+  if (emoji === '🃏') {
+    // Hit
+    game.playerHand.push(drawCard(game.deck));
+    const playerValue = getHandValue(game.playerHand);
+    
+    if (playerValue > 21) {
+      if (game.isSlashCommand) {
+        handleBlackjackEndSlash(reaction.message, false, 'Bust! You went over 21');
+      } else {
+        handleBlackjackEnd(reaction.message, false, 'Bust! You went over 21');
+      }
+    } else if (playerValue === 21) {
+      if (game.isSlashCommand) {
+        handleBlackjackEndSlash(reaction.message, null, 'You got 21! Dealer\'s turn...');
+      } else {
+        handleBlackjackEnd(reaction.message, null, 'You got 21! Dealer\'s turn...');
+      }
+    } else {
+      const embed = createBlackjackEmbed(game, false);
+      reaction.message.edit({ embeds: [embed] });
+    }
+  } else if (emoji === '✋') {
+    // Stand
+    if (game.isSlashCommand) {
+      handleBlackjackEndSlash(reaction.message, null, 'You stand. Dealer\'s turn...');
+    } else {
+      handleBlackjackEnd(reaction.message, null, 'You stand. Dealer\'s turn...');
+    }
+  } else if (emoji === '❌') {
+    // Quit
+    blackjackGames.delete(user.id);
+    const embed = new EmbedBuilder()
       .setColor(0xFF0000)
-      .setTitle('💥 BUST! 💥')
-      .setDescription('🃏 **YOU WENT OVER 21!** 🃏\n\n💔 You lose!')
-      .addFields(
-        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
-        { name: 'Total', value: `${playerValue} (BUST)`, inline: true },
-        { name: 'Lost', value: `-${game.betAmount} points`, inline: true }
-      )
+      .setTitle('🃏 Blackjack - Game Quit')
+      .setDescription('Game cancelled. Your bet has been returned.')
       .setTimestamp();
     
-    await interaction.editReply({ embeds: [bustEmbed], components: [] });
-    blackjackGames.delete(game.userId);
-    
-    // Update points
-    const currentPoints = vouchPoints.get(game.userId) || 0;
-    vouchPoints.set(game.userId, currentPoints - game.betAmount);
-    savePoints();
-    
-  } else if (playerValue === 21) {
-    // Perfect 21!
-    const perfectEmbed = new EmbedBuilder()
-      .setColor(0xFFD700)
-      .setTitle('🎯 PERFECT 21! 🎯')
-      .setDescription('🃏 **YOU HIT 21!** 🃏\n\n✨ Dealer\'s turn...')
-      .addFields(
-        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
-        { name: 'Total', value: '21 (Perfect!)', inline: true }
-      )
-      .setTimestamp();
-    
-    await interaction.editReply({ embeds: [perfectEmbed], components: [] });
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    await handleBlackjackEndSlash(interaction, null, 'You got 21!');
-    
-  } else {
-    // Continue game
-    await showBlackjackGame(interaction, game);
-  }
-}
-
-// Handle stand action
-async function handleStand(interaction, game) {
-  const standEmbed = new EmbedBuilder()
-    .setColor(0x0099FF)
-    .setTitle('✋ You Stand!')
-    .setDescription('🃏 **STAYING WITH YOUR HAND** 🃏\n\n🎭 Dealer\'s turn...')
-    .addFields(
-      { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
-      { name: 'Your Total', value: `${getHandValue(game.playerHand)}`, inline: true }
-    )
-    .setTimestamp();
-  
-  await interaction.editReply({ embeds: [standEmbed], components: [] });
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  await handleBlackjackEndSlash(interaction, null, 'You stand');
-}
-
-// Handle double down action
-async function handleDouble(interaction, game) {
-  const currentPoints = vouchPoints.get(game.userId) || 0;
-  if (currentPoints < game.betAmount) {
-    await interaction.followUp({ content: '❌ Not enough points to double down!', ephemeral: true });
-    return;
+    reaction.message.edit({ embeds: [embed] });
+    reaction.message.reactions.removeAll();
   }
   
-  game.betAmount *= 2;
-  
-  const doubleEmbed = new EmbedBuilder()
-    .setColor(0xFFD700)
-    .setTitle('⬆️ DOUBLE DOWN!')
-    .setDescription('🎴 **BET DOUBLED!** 🎴\n\n💰 Drawing one final card...')
-    .addFields(
-      { name: 'New Bet', value: `${game.betAmount} points`, inline: true },
-      { name: 'Risk', value: 'HIGH STAKES! 🔥', inline: true }
-    )
-    .setTimestamp();
-  
-  await interaction.editReply({ embeds: [doubleEmbed], components: [] });
-  await new Promise(resolve => setTimeout(resolve, 1500));
-  
-  // Draw exactly one card
-  game.playerHand.push(drawCard(game.deck));
-  const playerValue = getHandValue(game.playerHand);
-  
-  if (playerValue > 21) {
-    // Double down bust
-    const bustEmbed = new EmbedBuilder()
-      .setColor(0xFF0000)
-      .setTitle('💥 DOUBLE DOWN BUST! 💥')
-      .setDescription('🃏 **DOUBLE BET LOST!** 🃏\n\n😱 Expensive mistake!')
-      .addFields(
-        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
-        { name: 'Total', value: `${playerValue} (BUST)`, inline: true },
-        { name: 'Lost', value: `-${game.betAmount} points`, inline: true }
-      )
-      .setTimestamp();
-    
-    await interaction.editReply({ embeds: [bustEmbed], components: [] });
-    blackjackGames.delete(game.userId);
-    
-    // Update points
-    const currentPoints = vouchPoints.get(game.userId) || 0;
-    vouchPoints.set(game.userId, currentPoints - game.betAmount);
-    savePoints();
-    
-  } else {
-    // Auto-stand after double down
-    const doubleStandEmbed = new EmbedBuilder()
-      .setColor(0x0099FF)
-      .setTitle('⬆️ Double Down Complete!')
-      .setDescription('🃏 **ONE CARD DRAWN - AUTO STAND** 🃏\n\n🎭 Dealer\'s turn...')
-      .addFields(
-        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
-        { name: 'Total', value: `${playerValue}`, inline: true },
-        { name: 'Doubled Bet', value: `${game.betAmount} points`, inline: true }
-      )
-      .setTimestamp();
-    
-    await interaction.editReply({ embeds: [doubleStandEmbed], components: [] });
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    await handleBlackjackEndSlash(interaction, null, 'Double down complete');
-  }
-}
-
-// Handle quit action
-async function handleQuit(interaction, game) {
-  const quitEmbed = new EmbedBuilder()
-    .setColor(0xFF0000)
-    .setTitle('❌ Game Quit')
-    .setDescription('🃏 **GAME CANCELLED** 🃏\n\n💸 Bet returned')
-    .addFields(
-      { name: 'Result', value: 'Game cancelled', inline: true },
-      { name: 'Bet Status', value: 'Returned to you', inline: true }
-    )
-    .setTimestamp();
-  
-  await interaction.editReply({ embeds: [quitEmbed], components: [] });
-  blackjackGames.delete(game.userId);
-}
-
-// Create animated hand display
-function createAnimatedHand(hand, showAll = false) {
-  return hand.map((card, index) => {
-    if (!showAll && index === 1) return '🎴'; // Hidden card
-    const suitEmojis = { '♠️': '♠️', '♥️': '♥️', '♦️': '♦️', '♣️': '♣️' };
-    return `${card.rank}${suitEmojis[card.suit] || card.suit}`;
-  }).join(' ');
-}
-
-// Enhanced blackjack embed with animations
-function createAnimatedBlackjackEmbed(game, showDealerCards) {
-  const playerValue = getHandValue(game.playerHand);
-  const dealerValue = getHandValue(game.dealerHand);
-  
-  const playerCards = createAnimatedHand(game.playerHand, true);
-  const dealerCards = createAnimatedHand(game.dealerHand, showDealerCards);
-  
-  const statusText = showDealerCards ? 
-    '🎭 **SHOWDOWN TIME!** 🎭' : 
-    '🎯 **YOUR TURN TO PLAY** 🎯';
-  
-  return new EmbedBuilder()
-    .setColor(0x0099FF)
-    .setTitle('🃏 Blackjack Table')
-    .setDescription(`${statusText}\n\n🎲 *What will you do?*`)
-    .addFields(
-      { name: `🙋 Your Hand (${playerValue})`, value: `${playerCards}\n**Total: ${playerValue}**`, inline: false },
-      { name: `🎭 Dealer Hand ${showDealerCards ? `(${dealerValue})` : ''}`, value: `${dealerCards}${showDealerCards ? `\n**Total: ${dealerValue}**` : '\n*One card hidden*'}`, inline: false },
-      { name: '💰 Bet Amount', value: `${game.betAmount} points`, inline: true },
-      { name: '🎯 Goal', value: 'Get as close to 21 as possible!', inline: true }
-    )
-    .setFooter({ text: showDealerCards ? 'Good luck!' : '🃏 Hit | ✋ Stand | ❌ Fold' })
-    .setTimestamp();
-}
+  // Remove user's reaction
+  await reaction.users.remove(user.id);
+});
 
 function createDeck() {
   const suits = ['♠️', '♥️', '♦️', '♣️'];
@@ -1663,163 +1396,76 @@ async function handleBlackjackEnd(message, playerWon, reason) {
   message.reactions.removeAll();
 }
 
-// Handle blackjack end with dealer animations
-async function handleBlackjackEndSlash(interaction, playerWon, reason) {
-  const userId = interaction.user.id;
-  const game = blackjackGames.get(userId);
+// Slash command version of handleBlackjackEnd
+async function handleBlackjackEndSlash(messageOrInteraction, playerWon, reason) {
+  // Find the game based on the user who reacted
+  let userId;
+  if (messageOrInteraction.author) {
+    // This is a message from reaction
+    const games = Array.from(blackjackGames.entries());
+    const gameEntry = games.find(([, game]) => game.isSlashCommand);
+    if (!gameEntry) return;
+    userId = gameEntry[0];
+  } else {
+    // This is an interaction
+    userId = messageOrInteraction.user.id;
+  }
   
+  const game = blackjackGames.get(userId);
   if (!game) return;
   
-  if (playerWon === true) {
-    // Player already won (blackjack or 21)
-    const currentPoints = vouchPoints.get(userId) || 0;
-    vouchPoints.set(userId, currentPoints + game.betAmount);
-    savePoints();
+  // Play out dealer's hand if needed
+  if (playerWon === null) {
+    while (getHandValue(game.dealerHand) < 17) {
+      game.dealerHand.push(drawCard(game.deck));
+    }
     
-    const winEmbed = new EmbedBuilder()
-      .setColor(0x00FF00)
-      .setTitle('🎉 VICTORY! 🎉')
-      .setDescription(`🃏 **${reason}** 🃏\n\n🏆 **CONGRATULATIONS!** 🏆`)
-      .addFields(
-        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
-        { name: 'Payout', value: `+${game.betAmount} points`, inline: true },
-        { name: 'New Balance', value: `${vouchPoints.get(userId)} points`, inline: true }
-      )
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [winEmbed], components: [] });
-    blackjackGames.delete(userId);
-    return;
-  }
-  
-  if (playerWon === false) {
-    // Player busted
-    const currentPoints = vouchPoints.get(userId) || 0;
-    vouchPoints.set(userId, currentPoints - game.betAmount);
-    savePoints();
-    blackjackGames.delete(userId);
-    return;
-  }
-  
-  // Dealer's turn with animations
-  const dealerRevealEmbed = new EmbedBuilder()
-    .setColor(0xFFD700)
-    .setTitle('🎭 Dealer\'s Turn!')
-    .setDescription('🃏 **REVEALING DEALER CARDS** 🃏\n\n🎴 *Flipping the hidden card...*')
-    .addFields(
-      { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
-      { name: 'Your Total', value: `${getHandValue(game.playerHand)}`, inline: true }
-    )
-    .setTimestamp();
-
-  await interaction.editReply({ embeds: [dealerRevealEmbed], components: [] });
-  await new Promise(resolve => setTimeout(resolve, 2000));
-
-  // Show dealer's full hand
-  const dealerFullEmbed = new EmbedBuilder()
-    .setColor(0x0099FF)
-    .setTitle('🎭 Dealer\'s Cards Revealed!')
-    .setDescription('🃏 **DEALER\'S HAND REVEALED** 🃏\n\n🎯 *Dealer must hit on 16 and below...*')
-    .addFields(
-      { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
-      { name: 'Your Total', value: `${getHandValue(game.playerHand)}`, inline: true },
-      { name: 'Dealer Hand', value: createAnimatedHand(game.dealerHand, true), inline: false },
-      { name: 'Dealer Total', value: `${getHandValue(game.dealerHand)}`, inline: true }
-    )
-    .setTimestamp();
-
-  await interaction.editReply({ embeds: [dealerFullEmbed] });
-  await new Promise(resolve => setTimeout(resolve, 2000));
-
-  // Dealer hits until 17 or higher with animations
-  while (getHandValue(game.dealerHand) < 17) {
-    const hitEmbed = new EmbedBuilder()
-      .setColor(0xFFD700)
-      .setTitle('🃏 Dealer Draws Card...')
-      .setDescription('🎴 **DEALER MUST HIT** 🎴\n\n```\n   🃁 ➡️ ❓\n```\n🎭 *Dealer draws another card...*')
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [hitEmbed] });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    game.dealerHand.push(drawCard(game.deck));
+    const playerValue = getHandValue(game.playerHand);
+    const dealerValue = getHandValue(game.dealerHand);
     
-    const newCardEmbed = new EmbedBuilder()
-      .setColor(0x0099FF)
-      .setTitle('🎭 Dealer\'s New Card!')
-      .setDescription('🃏 **DEALER DREW A CARD** 🃏\n\n🎯 *Checking total...*')
-      .addFields(
-        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
-        { name: 'Your Total', value: `${getHandValue(game.playerHand)}`, inline: true },
-        { name: 'Dealer Hand', value: createAnimatedHand(game.dealerHand, true), inline: false },
-        { name: 'Dealer Total', value: `${getHandValue(game.dealerHand)}`, inline: true }
-      )
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [newCardEmbed] });
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    if (dealerValue > 21) {
+      playerWon = true;
+      reason = 'Dealer busted!';
+    } else if (dealerValue > playerValue) {
+      playerWon = false;
+      reason = 'Dealer wins!';
+    } else if (playerValue > dealerValue) {
+      playerWon = true;
+      reason = 'You win!';
+    } else {
+      playerWon = null;
+      reason = 'Push (tie)!';
+    }
   }
-
-  // Determine winner with dramatic reveal
-  const playerValue = getHandValue(game.playerHand);
-  const dealerValue = getHandValue(game.dealerHand);
   
-  let won = false;
-  let resultText = '';
-  let resultTitle = '';
-  let resultColor = 0xFF0000;
-  
-  if (dealerValue > 21) {
-    won = true;
-    resultText = '💥 **DEALER BUSTED!** 💥\n\n🎉 You win because the dealer went over 21!';
-    resultTitle = '🎉 DEALER BUST - YOU WIN! 🎉';
-    resultColor = 0x00FF00;
-  } else if (playerValue > dealerValue) {
-    won = true;
-    resultText = '🏆 **YOUR HAND IS HIGHER!** 🏆\n\n🎉 Congratulations on the victory!';
-    resultTitle = '🎉 YOU WIN! 🎉';
-    resultColor = 0x00FF00;
-  } else if (playerValue === dealerValue) {
-    resultText = '🤝 **PUSH - IT\'S A TIE!** 🤝\n\n💰 Your bet is returned to you.';
-    resultTitle = '🤝 PUSH - TIE GAME!';
-    resultColor = 0xFFD700;
-  } else {
-    resultText = '😞 **DEALER WINS** 😞\n\n💔 Better luck next time!';
-    resultTitle = '💔 DEALER WINS';
-    resultColor = 0xFF0000;
-  }
-
-  // Final dramatic result
-  const finalEmbed = new EmbedBuilder()
-    .setColor(resultColor)
-    .setTitle(resultTitle)
-    .setDescription(`🃏 **FINAL SHOWDOWN** 🃏\n\n${resultText}`)
-    .addFields(
-      { name: '🙋 Your Final Hand', value: `${createAnimatedHand(game.playerHand, true)}\n**Total: ${playerValue}**`, inline: false },
-      { name: '🎭 Dealer Final Hand', value: `${createAnimatedHand(game.dealerHand, true)}\n**Total: ${dealerValue}**`, inline: false },
-      { name: '💰 Bet Amount', value: `${game.betAmount} points`, inline: true },
-      { name: '📊 Result', value: won ? `+${game.betAmount} points` : playerValue === dealerValue ? 'Bet returned' : `-${game.betAmount} points`, inline: true },
-      { name: '🎯 New Balance', value: `${vouchPoints.get(userId) + (won ? game.betAmount : playerValue === dealerValue ? 0 : -game.betAmount)} points`, inline: true }
-    )
-    .setFooter({ text: won ? 'Congratulations! 🎉' : playerValue === dealerValue ? 'Close game! 🤝' : 'Try again! 🎲' })
-    .setTimestamp();
-
-  await interaction.editReply({ embeds: [finalEmbed], components: [] });
-
   // Update points
-  const currentPoints = vouchPoints.get(userId) || 0;
-  if (won) {
-    vouchPoints.set(userId, currentPoints + game.betAmount);
-  } else if (playerValue !== dealerValue) {
-    vouchPoints.set(userId, currentPoints - game.betAmount);
-  }
-  // If tie, points stay the same (bet returned)
+  const currentPoints = vouchPoints.get(game.userId) || 0;
+  let newPoints = currentPoints;
   
-  savePoints();
-  blackjackGames.delete(userId);
+  if (playerWon === true) {
+    newPoints = currentPoints + game.betAmount;
+  } else if (playerWon === false) {
+    newPoints = currentPoints - game.betAmount;
+  }
+  // If tie (playerWon === null), points stay the same
+  
+  vouchPoints.set(game.userId, newPoints);
+  savePoints(); // Save after blackjack
+  blackjackGames.delete(game.userId);
+  
+  const embed = new EmbedBuilder()
+    .setColor(playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFFF00)
+    .setTitle('🃏 Blackjack - Game Over')
+    .setDescription(reason)
+    .addFields(
+      { name: `Your Hand (${getHandValue(game.playerHand)})`, value: game.playerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
+      { name: `Dealer Hand (${getHandValue(game.dealerHand)})`, value: game.dealerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
+      { name: 'Result', value: playerWon === true ? `+${game.betAmount} points` : playerWon === false ? `-${game.betAmount} points` : 'No change', inline: true },
+      { name: 'New Balance', value: `${newPoints} points`, inline: true }
+    )
+    .setTimestamp();
+  
+  await messageOrInteraction.update({ embeds: [embed], components: [] });
 }
-
-// Load points when the bot starts
-loadPoints();
 
 client.login(process.env.DISCORD_TOKEN); 
