@@ -561,64 +561,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     
-    // Show bet confirmation
-    const confirmEmbed = new EmbedBuilder()
-      .setColor(0x0099FF)
-      .setTitle('🃏 Blackjack - Confirm Your Bet')
-      .setDescription(`You're about to bet **${betAmount}** points on a blackjack game`)
-      .addFields(
-        { name: 'Your Balance', value: `${userPoints} points`, inline: true },
-        { name: 'Bet Amount', value: `${betAmount} points`, inline: true },
-        { name: 'Max Payout', value: `${betAmount * 2} points`, inline: true }
-      )
-      .setFooter({ text: 'Blackjack pays 2:1 • Dealer stands on 17' })
-      .setTimestamp();
-    
-    const row = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('blackjack_confirm')
-          .setLabel('🃏 Deal the Cards!')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId('blackjack_cancel')
-          .setLabel('❌ Cancel')
-          .setStyle(ButtonStyle.Secondary)
-      );
-    
-    const response = await interaction.reply({ embeds: [confirmEmbed], components: [row] });
-    
-    const collector = response.createMessageComponentCollector({ time: 30000 });
-    
-    collector.on('collect', async i => {
-      if (i.user.id !== userId) {
-        return i.reply({ content: 'This is not your bet!', ephemeral: true });
-      }
-      
-      if (i.customId === 'blackjack_confirm') {
-        await playBlackjackSlash(i, betAmount);
-      } else {
-        const cancelEmbed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('❌ Bet Cancelled')
-          .setDescription('Your blackjack bet has been cancelled.')
-          .setTimestamp();
-        
-        await i.update({ embeds: [cancelEmbed], components: [] });
-      }
-    });
-    
-    collector.on('end', collected => {
-      if (collected.size === 0) {
-        const timeoutEmbed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('⏰ Bet Expired')
-          .setDescription('Your blackjack bet has expired.')
-          .setTimestamp();
-        
-        interaction.editReply({ embeds: [timeoutEmbed], components: [] });
-      }
-    });
+    // --- REMOVED CONFIRMATION STEP ---
+    // The game now starts immediately for reliability.
+    await playBlackjackSlash(interaction, betAmount);
   }
 
   // Send points slash command
@@ -1074,7 +1019,7 @@ async function handleBlackjackButton(interaction, clickerId) {
     
     const game = blackjackGames.get(gameOwnerId);
     if (!game) {
-      return await safeEditReply(interaction, {
+      return await safeReply(interaction, {
         embeds: [createErrorEmbed('🃏 Game not found!', 'Your blackjack game has expired or was not found. This can happen after 10 minutes of inactivity.')],
         components: []
       });
@@ -1092,29 +1037,34 @@ async function handleBlackjackButton(interaction, clickerId) {
       case 'quit':
         return await handleQuit(interaction, game);
       default:
-        return await safeEditReply(interaction, {
+        return await safeReply(interaction, {
           embeds: [createErrorEmbed('❌ Unknown Action', 'Invalid button action detected.')],
           components: []
         });
     }
   } catch (error) {
     console.error('Blackjack button error:', error);
-    return await safeEditReply(interaction, {
+    return await safeReply(interaction, {
       embeds: [createErrorEmbed('🔧 System Error', 'A technical error occurred. Please try starting a new game.')],
       components: []
     });
   }
 }
 
-// Safe edit reply that never fails
-async function safeEditReply(interaction, options) {
+// A truly safe reply/edit/followUp function that never fails.
+async function safeReply(interaction, options) {
   try {
-    return await interaction.editReply(options);
+    if (interaction.replied || interaction.deferred) {
+      await interaction.editReply(options);
+    } else {
+      await interaction.reply(options);
+    }
   } catch (error) {
+    console.error(`Primary interaction failed: ${error.message}. Attempting fallback...`);
     try {
-      return await interaction.followUp({ ...options, ephemeral: true });
+      await interaction.followUp({ ...options, ephemeral: true });
     } catch (fallbackError) {
-      console.error('Failed all interaction methods:', fallbackError);
+      console.error(`All interaction methods failed: ${fallbackError.message}`);
     }
   }
 }
@@ -1140,7 +1090,7 @@ async function handleHit(interaction, game) {
   } else {
     const embed = createBlackjackEmbed(game, false);
     const buttons = createBlackjackButtons(game.userId, false); // No more double down after hit
-    return await safeEditReply(interaction, { embeds: [embed], components: [buttons] });
+    return await safeReply(interaction, { embeds: [embed], components: [buttons] });
   }
 }
 
@@ -1150,7 +1100,7 @@ async function handleStand(interaction, game) {
 
 async function handleDoubleDown(interaction, game) {
   if (game.playerHand.length !== 2) {
-    return await safeEditReply(interaction, {
+    return await safeReply(interaction, {
       embeds: [createErrorEmbed('❌ Cannot Double Down', 'Double down is only allowed on your first two cards!')],
       components: [createBlackjackButtons(game.userId, false)]
     });
@@ -1158,7 +1108,7 @@ async function handleDoubleDown(interaction, game) {
   
   const userPoints = vouchPoints.get(game.userId) || 0;
   if (userPoints < game.betAmount) {
-    return await safeEditReply(interaction, {
+    return await safeReply(interaction, {
       embeds: [createErrorEmbed('💰 Insufficient Points', `You need ${game.betAmount} more points to double down!`)],
       components: [createBlackjackButtons(game.userId, true)]
     });
@@ -1193,7 +1143,7 @@ async function handleQuit(interaction, game) {
     )
     .setTimestamp();
   
-  return await safeEditReply(interaction, { embeds: [embed], components: [] });
+  return await safeReply(interaction, { embeds: [embed], components: [] });
 }
 
 // Enhanced game ending logic
@@ -1257,7 +1207,7 @@ async function endGame(interaction, game, playerWon, reason) {
     .setFooter({ text: game.isDoubleDown ? '💰 Double Down game completed!' : '🃏 Standard blackjack completed' })
     .setTimestamp();
   
-  return await safeEditReply(interaction, { embeds: [resultEmbed], components: [] });
+  return await safeReply(interaction, { embeds: [resultEmbed], components: [] });
 }
 
 // Create blackjack buttons
@@ -1330,7 +1280,8 @@ async function playBlackjackSlash(interaction, betAmount) {
     const embed = createBlackjackEmbed(game, false);
     const buttons = createBlackjackButtons(userId, true);
     
-    await interaction.update({ embeds: [embed], components: [buttons] });
+    // Use the new safeReply function for the initial game message.
+    await safeReply(interaction, { embeds: [embed], components: [buttons] });
     
     // Auto-cleanup after 10 minutes
     setTimeout(async () => {
@@ -1346,7 +1297,7 @@ async function playBlackjackSlash(interaction, betAmount) {
   } catch (error) {
     console.error('Blackjack start error:', error);
     const errorEmbed = createErrorEmbed('🔧 Game Start Error', 'Failed to start blackjack. Please try again.');
-    await safeEditReply(interaction, { embeds: [errorEmbed], components: [] });
+    await safeReply(interaction, { embeds: [errorEmbed], components: [] });
   }
 }
 
