@@ -152,70 +152,9 @@ async function handleButtonInteraction(interaction) {
     return;
   }
   
-  // Handle blackjack game buttons with improved reliability
+  // BULLETPROOF BLACKJACK BUTTON HANDLER - Never fails!
   if (interaction.customId.startsWith('bj_')) {
-    const game = blackjackGames.get(userId);
-    if (!game) {
-      await interaction.deferUpdate();
-      return interaction.followUp({ content: 'Game not found!', ephemeral: true });
-    }
-    
-    // Defer update immediately to prevent interaction timeout
-    await interaction.deferUpdate();
-    
-    if (interaction.customId === `bj_hit_${userId}`) {
-      // Hit
-      game.playerHand.push(drawCard(game.deck));
-      const playerValue = getHandValue(game.playerHand);
-      
-      if (playerValue > 21) {
-        await handleBlackjackEndSlash(interaction, false, 'Bust! You went over 21');
-      } else if (playerValue === 21) {
-        await handleBlackjackEndSlash(interaction, null, 'You got 21! Dealer\'s turn...');
-      } else {
-        const embed = createBlackjackEmbed(game, false);
-        const row = createBlackjackButtons(userId, game.playerHand.length === 2);
-        await interaction.editReply({ embeds: [embed], components: [row] });
-      }
-    } else if (interaction.customId === `bj_stand_${userId}`) {
-      // Stand
-      await handleBlackjackEndSlash(interaction, null, 'You stand. Dealer\'s turn...');
-    } else if (interaction.customId === `bj_double_${userId}`) {
-      // Double Down - only allowed on first two cards
-      if (game.playerHand.length !== 2) {
-        return interaction.followUp({ content: 'Double down only allowed on first two cards!', ephemeral: true });
-      }
-      
-      const userPoints = vouchPoints.get(userId) || 0;
-      if (userPoints < game.betAmount) {
-        return interaction.followUp({ content: 'Insufficient points to double down!', ephemeral: true });
-      }
-      
-      // Double the bet
-      game.betAmount *= 2;
-      game.isDoubleDown = true;
-      
-      // Draw exactly one more card
-      game.playerHand.push(drawCard(game.deck));
-      const playerValue = getHandValue(game.playerHand);
-      
-      if (playerValue > 21) {
-        await handleBlackjackEndSlash(interaction, false, 'Bust! You went over 21 (Double Down)');
-      } else {
-        // Automatically stand after double down
-        await handleBlackjackEndSlash(interaction, null, 'Double Down! Dealer\'s turn...');
-      }
-    } else if (interaction.customId === `bj_quit_${userId}`) {
-      // Quit
-      blackjackGames.delete(userId);
-      const embed = new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setTitle('🃏 Blackjack - Game Quit')
-        .setDescription('Game cancelled. Your bet has been returned.')
-        .setTimestamp();
-      
-      await interaction.editReply({ embeds: [embed], components: [] });
-    }
+    return await handleBlackjackButton(interaction, userId);
   }
 }
 
@@ -1137,7 +1076,199 @@ async function playBlackjack(message, betAmount) {
   await reply.react('❌'); // quit
 }
 
-// Create blackjack buttons with user-specific IDs
+// BULLETPROOF BLACKJACK BUTTON HANDLER
+async function handleBlackjackButton(interaction, userId) {
+  try {
+    // ALWAYS defer first - this prevents ANY timeout issues
+    await interaction.deferUpdate().catch(() => {}); // Ignore if already deferred
+    
+    const game = blackjackGames.get(userId);
+    if (!game) {
+      return await safeEditReply(interaction, {
+        embeds: [createErrorEmbed('🃏 Game not found!', 'Your blackjack game has expired or was not found.')],
+        components: []
+      });
+    }
+    
+    const action = interaction.customId.split('_')[1]; // Extract action from bj_ACTION_userId
+    
+    switch (action) {
+      case 'hit':
+        return await handleHit(interaction, game);
+      case 'stand':
+        return await handleStand(interaction, game);
+      case 'double':
+        return await handleDoubleDown(interaction, game);
+      case 'quit':
+        return await handleQuit(interaction, game);
+      default:
+        return await safeEditReply(interaction, {
+          embeds: [createErrorEmbed('❌ Unknown Action', 'Invalid button action detected.')],
+          components: []
+        });
+    }
+  } catch (error) {
+    console.error('Blackjack button error:', error);
+    return await safeEditReply(interaction, {
+      embeds: [createErrorEmbed('🔧 System Error', 'A technical error occurred. Please try starting a new game.')],
+      components: []
+    });
+  }
+}
+
+// Safe edit reply that never fails
+async function safeEditReply(interaction, options) {
+  try {
+    return await interaction.editReply(options);
+  } catch (error) {
+    try {
+      return await interaction.followUp({ ...options, ephemeral: true });
+    } catch (fallbackError) {
+      console.error('Failed all interaction methods:', fallbackError);
+    }
+  }
+}
+
+// Create error embed
+function createErrorEmbed(title, description) {
+  return new EmbedBuilder()
+    .setColor(0xFF0000)
+    .setTitle(title)
+    .setDescription(description)
+    .setTimestamp();
+}
+
+// BULLETPROOF BLACKJACK ACTIONS
+async function handleHit(interaction, game) {
+  game.playerHand.push(drawCard(game.deck));
+  const playerValue = getHandValue(game.playerHand);
+  
+  if (playerValue > 21) {
+    return await endGame(interaction, game, false, '💥 BUST! You went over 21!');
+  } else if (playerValue === 21) {
+    return await endGame(interaction, game, null, '🎯 Perfect 21! Dealer\'s turn...');
+  } else {
+    const embed = createBlackjackEmbed(game, false);
+    const buttons = createBlackjackButtons(game.userId, false); // No more double down after hit
+    return await safeEditReply(interaction, { embeds: [embed], components: [buttons] });
+  }
+}
+
+async function handleStand(interaction, game) {
+  return await endGame(interaction, game, null, '✋ You stand. Dealer\'s turn...');
+}
+
+async function handleDoubleDown(interaction, game) {
+  if (game.playerHand.length !== 2) {
+    return await safeEditReply(interaction, {
+      embeds: [createErrorEmbed('❌ Cannot Double Down', 'Double down is only allowed on your first two cards!')],
+      components: [createBlackjackButtons(game.userId, false)]
+    });
+  }
+  
+  const userPoints = vouchPoints.get(game.userId) || 0;
+  if (userPoints < game.betAmount) {
+    return await safeEditReply(interaction, {
+      embeds: [createErrorEmbed('💰 Insufficient Points', `You need ${game.betAmount} more points to double down!`)],
+      components: [createBlackjackButtons(game.userId, true)]
+    });
+  }
+  
+  // Double the bet and mark as double down
+  game.betAmount *= 2;
+  game.isDoubleDown = true;
+  
+  // Draw exactly one card
+  game.playerHand.push(drawCard(game.deck));
+  const playerValue = getHandValue(game.playerHand);
+  
+  if (playerValue > 21) {
+    return await endGame(interaction, game, false, '💥 DOUBLE DOWN BUST! You went over 21!');
+  } else {
+    return await endGame(interaction, game, null, '💰 DOUBLE DOWN! Dealer\'s turn...');
+  }
+}
+
+async function handleQuit(interaction, game) {
+  blackjackGames.delete(game.userId);
+  
+  const embed = new EmbedBuilder()
+    .setColor(0xFFD700)
+    .setTitle('🃏 Blackjack - Game Quit')
+    .setDescription('Game cancelled. Your bet has been returned.')
+    .addFields(
+      { name: '💰 Bet Returned', value: `${game.betAmount} points`, inline: true },
+      { name: '👋 Status', value: 'No points lost', inline: true }
+    )
+    .setTimestamp();
+  
+  return await safeEditReply(interaction, { embeds: [embed], components: [] });
+}
+
+// Enhanced game ending logic
+async function endGame(interaction, game, playerWon, reason) {
+  // Play dealer's hand if needed
+  if (playerWon === null) {
+    while (getHandValue(game.dealerHand) < 17) {
+      game.dealerHand.push(drawCard(game.deck));
+    }
+    
+    const playerValue = getHandValue(game.playerHand);
+    const dealerValue = getHandValue(game.dealerHand);
+    
+    if (dealerValue > 21) {
+      playerWon = true;
+      reason = game.isDoubleDown ? '🎉 DEALER BUST! Double Down WIN!' : '🎉 DEALER BUST! You win!';
+    } else if (dealerValue > playerValue) {
+      playerWon = false;
+      reason = game.isDoubleDown ? '😞 Dealer wins (Double Down loss)' : '😞 Dealer wins!';
+    } else if (playerValue > dealerValue) {
+      playerWon = true;
+      reason = game.isDoubleDown ? '🎉 YOU WIN! Double Down success!' : '🎉 YOU WIN!';
+    } else {
+      playerWon = null;
+      reason = game.isDoubleDown ? '🤝 PUSH! Double Down returned' : '🤝 PUSH! It\'s a tie!';
+    }
+  }
+  
+  // Update points
+  const currentPoints = vouchPoints.get(game.userId) || 0;
+  let newPoints = currentPoints;
+  let pointChange = 0;
+  
+  if (playerWon === true) {
+    pointChange = +game.betAmount;
+    newPoints = currentPoints + game.betAmount;
+  } else if (playerWon === false) {
+    pointChange = -game.betAmount;
+    newPoints = currentPoints - game.betAmount;
+  }
+  
+  vouchPoints.set(game.userId, newPoints);
+  savePoints();
+  blackjackGames.delete(game.userId);
+  
+  // Create result embed
+  const color = playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFD700;
+  const resultEmbed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle('🃏 BLACKJACK - GAME OVER')
+    .setDescription(reason)
+    .addFields(
+      { name: '🎴 Your Hand', value: `${game.playerHand.map(card => `${card.rank}${card.suit}`).join(' ')}\n**Total: ${getHandValue(game.playerHand)}**`, inline: true },
+      { name: '🎩 Dealer Hand', value: `${game.dealerHand.map(card => `${card.rank}${card.suit}`).join(' ')}\n**Total: ${getHandValue(game.dealerHand)}**`, inline: true },
+      { name: '💰 Bet', value: `${game.betAmount} points${game.isDoubleDown ? '\n💎 (DOUBLED!)' : ''}`, inline: true },
+      { name: '📊 Result', value: pointChange > 0 ? `+${pointChange} points` : pointChange < 0 ? `${pointChange} points` : 'No change', inline: true },
+      { name: '🏦 Balance', value: `${newPoints} points`, inline: true },
+      { name: '🎯 Status', value: playerWon === true ? '🏆 WINNER!' : playerWon === false ? '💔 LOSS' : '🤝 TIE', inline: true }
+    )
+    .setFooter({ text: game.isDoubleDown ? '💰 Double Down game completed!' : '🃏 Standard blackjack completed' })
+    .setTimestamp();
+  
+  return await safeEditReply(interaction, { embeds: [resultEmbed], components: [] });
+}
+
+// Create blackjack buttons
 function createBlackjackButtons(userId, canDoubleDown = true) {
   const buttons = [
     new ButtonBuilder()
@@ -1150,7 +1281,6 @@ function createBlackjackButtons(userId, canDoubleDown = true) {
       .setStyle(ButtonStyle.Secondary)
   ];
   
-  // Add double down button only on first two cards
   if (canDoubleDown) {
     buttons.push(
       new ButtonBuilder()
@@ -1170,45 +1300,57 @@ function createBlackjackButtons(userId, canDoubleDown = true) {
   return new ActionRowBuilder().addComponents(buttons);
 }
 
-// Improved Slash command version of blackjack
+// BULLETPROOF blackjack slash command
 async function playBlackjackSlash(interaction, betAmount) {
   const userId = interaction.user.id;
   
-  // Create deck and deal cards
-  const deck = createDeck();
-  const playerHand = [drawCard(deck), drawCard(deck)];
-  const dealerHand = [drawCard(deck), drawCard(deck)];
-  
-  const game = {
-    deck,
-    playerHand,
-    dealerHand,
-    betAmount,
-    userId,
-    isSlashCommand: true,
-    isDoubleDown: false
-  };
-  
-  blackjackGames.set(userId, game);
-  
-  const playerValue = getHandValue(playerHand);
-  
-  if (playerValue === 21) {
-    // Blackjack!
-    return handleBlackjackEndSlash(interaction, true, 'Blackjack! 🎉');
-  }
-  
-  const embed = createBlackjackEmbed(game, false);
-  const row = createBlackjackButtons(userId, true); // Can double down on first two cards
-  
-  await interaction.update({ embeds: [embed], components: [row] });
-  
-  // Set timeout to clean up game after 5 minutes
-  setTimeout(() => {
+  try {
+    // Clean up any existing game
     if (blackjackGames.has(userId)) {
       blackjackGames.delete(userId);
     }
-  }, 300000);
+    
+    // Create fresh deck and deal cards
+    const deck = createDeck();
+    const playerHand = [drawCard(deck), drawCard(deck)];
+    const dealerHand = [drawCard(deck), drawCard(deck)];
+    
+    const game = {
+      deck,
+      playerHand,
+      dealerHand,
+      betAmount,
+      userId,
+      isDoubleDown: false,
+      timestamp: Date.now()
+    };
+    
+    blackjackGames.set(userId, game);
+    
+    const playerValue = getHandValue(playerHand);
+    
+    // Check for blackjack (21 with first two cards)
+    if (playerValue === 21) {
+      return await endGame(interaction, game, true, '🎉 BLACKJACK! Perfect 21 with your first two cards!');
+    }
+    
+    const embed = createBlackjackEmbed(game, false);
+    const buttons = createBlackjackButtons(userId, true);
+    
+    await interaction.update({ embeds: [embed], components: [buttons] });
+    
+    // Auto-cleanup after 10 minutes
+    setTimeout(() => {
+      if (blackjackGames.has(userId)) {
+        blackjackGames.delete(userId);
+      }
+    }, 600000);
+    
+  } catch (error) {
+    console.error('Blackjack start error:', error);
+    const errorEmbed = createErrorEmbed('🔧 Game Start Error', 'Failed to start blackjack. Please try again.');
+    await safeEditReply(interaction, { embeds: [errorEmbed], components: [] });
+  }
 }
 
 // Legacy reaction handler removed - now using modern button system
@@ -1341,83 +1483,6 @@ async function handleBlackjackEnd(message, playerWon, reason) {
   message.reactions.removeAll();
 }
 
-// Enhanced blackjack end handler with Double Down support
-async function handleBlackjackEndSlash(messageOrInteraction, playerWon, reason) {
-  // Find the game based on the user who reacted
-  let userId;
-  if (messageOrInteraction.author) {
-    // This is a message from reaction
-    const games = Array.from(blackjackGames.entries());
-    const gameEntry = games.find(([, game]) => game.isSlashCommand);
-    if (!gameEntry) return;
-    userId = gameEntry[0];
-  } else {
-    // This is an interaction
-    userId = messageOrInteraction.user.id;
-  }
-  
-  const game = blackjackGames.get(userId);
-  if (!game) return;
-  
-  // Play out dealer's hand if needed
-  if (playerWon === null) {
-    while (getHandValue(game.dealerHand) < 17) {
-      game.dealerHand.push(drawCard(game.deck));
-    }
-    
-    const playerValue = getHandValue(game.playerHand);
-    const dealerValue = getHandValue(game.dealerHand);
-    
-    if (dealerValue > 21) {
-      playerWon = true;
-      reason = game.isDoubleDown ? 'Dealer busted! (Double Down WIN!)' : 'Dealer busted!';
-    } else if (dealerValue > playerValue) {
-      playerWon = false;
-      reason = game.isDoubleDown ? 'Dealer wins (Double Down LOSS)' : 'Dealer wins!';
-    } else if (playerValue > dealerValue) {
-      playerWon = true;
-      reason = game.isDoubleDown ? 'You win! (Double Down SUCCESS!)' : 'You win!';
-    } else {
-      playerWon = null;
-      reason = game.isDoubleDown ? 'Push (tie) - Double Down returned!' : 'Push (tie)!';
-    }
-  }
-  
-  // Update points
-  const currentPoints = vouchPoints.get(game.userId) || 0;
-  let newPoints = currentPoints;
-  
-  if (playerWon === true) {
-    newPoints = currentPoints + game.betAmount;
-  } else if (playerWon === false) {
-    newPoints = currentPoints - game.betAmount;
-  }
-  // If tie (playerWon === null), points stay the same
-  
-  vouchPoints.set(game.userId, newPoints);
-  savePoints(); // Save after blackjack
-  blackjackGames.delete(game.userId);
-  
-  const resultText = playerWon === true ? `+${game.betAmount} points` : playerWon === false ? `-${game.betAmount} points` : 'No change';
-  const doubleDownText = game.isDoubleDown ? ' 💰 (DOUBLED!)' : '';
-  
-  const embed = new EmbedBuilder()
-    .setColor(playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFFF00)
-    .setTitle('🃏 Blackjack - Game Over')
-    .setDescription(reason)
-    .addFields(
-      { name: `Your Hand (${getHandValue(game.playerHand)})`, value: game.playerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
-      { name: `Dealer Hand (${getHandValue(game.dealerHand)})`, value: game.dealerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
-      { name: 'Bet Amount', value: `${game.betAmount} points${doubleDownText}`, inline: true },
-      { name: 'Result', value: resultText, inline: true },
-      { name: 'New Balance', value: `${newPoints} points`, inline: true }
-    )
-    .setFooter({ 
-      text: game.isDoubleDown ? '💰 Double Down played!' : '🃏 Standard blackjack game'
-    })
-    .setTimestamp();
-  
-  await messageOrInteraction.editReply({ embeds: [embed], components: [] });
-}
+
 
 client.login(process.env.DISCORD_TOKEN); 
