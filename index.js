@@ -198,6 +198,119 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     console.log(`${interaction.user.username} modified ${targetUser.username}'s points: ${currentPoints} -> ${newPoints} (${amount > 0 ? '+' : ''}${amount}) - ${reason}`);
   }
+
+  // Roulette slash command
+  if (interaction.commandName === 'roulette') {
+    const betAmount = interaction.options.getInteger('amount');
+    const betType = interaction.options.getString('bet');
+    const numberBet = interaction.options.getInteger('number');
+    
+    const userId = interaction.user.id;
+    const userPoints = vouchPoints.get(userId) || 0;
+    
+    if (userPoints < betAmount) {
+      return interaction.reply({ 
+        content: `❌ You don't have enough points! You have ${userPoints} points but tried to bet ${betAmount}.`, 
+        ephemeral: true 
+      });
+    }
+    
+    // Handle number bet
+    let finalBetType = betType;
+    if (betType === 'number') {
+      if (numberBet === null || numberBet === undefined) {
+        return interaction.reply({ 
+          content: '❌ Please specify a number (0-36) when betting on numbers!', 
+          ephemeral: true 
+        });
+      }
+      finalBetType = numberBet.toString();
+    }
+    
+    await playRouletteSlash(interaction, betAmount, finalBetType);
+  }
+
+  // Blackjack slash command
+  if (interaction.commandName === 'blackjack') {
+    const betAmount = interaction.options.getInteger('amount');
+    const userId = interaction.user.id;
+    const userPoints = vouchPoints.get(userId) || 0;
+    
+    if (userPoints < betAmount) {
+      return interaction.reply({ 
+        content: `❌ You don't have enough points! You have ${userPoints} points but tried to bet ${betAmount}.`, 
+        ephemeral: true 
+      });
+    }
+    
+    if (blackjackGames.has(userId)) {
+      return interaction.reply({ 
+        content: '❌ You already have a blackjack game in progress!', 
+        ephemeral: true 
+      });
+    }
+    
+    await playBlackjackSlash(interaction, betAmount);
+  }
+
+  // Send points slash command
+  if (interaction.commandName === 'send') {
+    const targetUser = interaction.options.getUser('user');
+    const amount = interaction.options.getInteger('amount');
+    const message = interaction.options.getString('message') || '';
+    
+    const senderId = interaction.user.id;
+    const senderPoints = vouchPoints.get(senderId) || 0;
+    
+    // Check if trying to send to themselves
+    if (targetUser.id === senderId) {
+      return interaction.reply({ 
+        content: '❌ You cannot send points to yourself!', 
+        ephemeral: true 
+      });
+    }
+    
+    // Check if target is a bot
+    if (targetUser.bot) {
+      return interaction.reply({ 
+        content: '❌ You cannot send points to bots!', 
+        ephemeral: true 
+      });
+    }
+    
+    // Check if sender has enough points
+    if (senderPoints < amount) {
+      return interaction.reply({ 
+        content: `❌ You don't have enough points! You have ${senderPoints} points but tried to send ${amount}.`, 
+        ephemeral: true 
+      });
+    }
+    
+    // Transfer points
+    const receiverPoints = vouchPoints.get(targetUser.id) || 0;
+    vouchPoints.set(senderId, senderPoints - amount);
+    vouchPoints.set(targetUser.id, receiverPoints + amount);
+    savePoints();
+    
+    const embed = new EmbedBuilder()
+      .setColor(0x00FF00)
+      .setTitle('💸 Points Transferred!')
+      .setDescription(`<@${senderId}> sent **${amount}** points to <@${targetUser.id}>`)
+      .addFields(
+        { name: 'Sender Balance', value: `${senderPoints - amount} points`, inline: true },
+        { name: 'Receiver Balance', value: `${receiverPoints + amount} points`, inline: true },
+        { name: 'Amount Sent', value: `${amount} points`, inline: true }
+      )
+      .setTimestamp();
+    
+    if (message) {
+      embed.addFields({ name: 'Message', value: message, inline: false });
+    }
+    
+    await interaction.reply({ embeds: [embed] });
+    
+    console.log(`${interaction.user.username} sent ${amount} points to ${targetUser.username}`);
+  }
 });
 
 // Gambling functionality
@@ -299,6 +412,65 @@ async function playRoulette(message, betAmount, betType) {
   message.reply({ embeds: [embed] });
 }
 
+// Slash command version of roulette
+async function playRouletteSlash(interaction, betAmount, betType) {
+  const userId = interaction.user.id;
+  
+  const spin = Math.floor(Math.random() * 37); // 0-36
+  const isRed = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].includes(spin);
+  const isBlack = spin !== 0 && !isRed;
+  const isGreen = spin === 0;
+  
+  let won = false;
+  let payout = 0;
+  let resultText = '';
+  
+  betType = betType.toLowerCase();
+  
+  if (betType === 'red' && isRed) {
+    won = true;
+    payout = betAmount * 2;
+    resultText = '🔴 RED wins!';
+  } else if (betType === 'black' && isBlack) {
+    won = true;
+    payout = betAmount * 2;
+    resultText = '⚫ BLACK wins!';
+  } else if (betType === 'green' && isGreen) {
+    won = true;
+    payout = betAmount * 14;
+    resultText = '🟢 GREEN wins!';
+  } else if (!isNaN(betType) && parseInt(betType) === spin) {
+    won = true;
+    payout = betAmount * 35;
+    resultText = `🎯 Number ${spin} wins!`;
+  } else {
+    resultText = `You lost! The ball landed on ${spin} (${isGreen ? '🟢 Green' : isRed ? '🔴 Red' : '⚫ Black'})`;
+  }
+  
+  // Update points
+  const currentPoints = vouchPoints.get(userId) || 0;
+  if (won) {
+    vouchPoints.set(userId, currentPoints - betAmount + payout);
+  } else {
+    vouchPoints.set(userId, currentPoints - betAmount);
+  }
+  savePoints();
+  
+  const embed = new EmbedBuilder()
+    .setColor(won ? 0x00FF00 : 0xFF0000)
+    .setTitle('🎰 Roulette Results')
+    .setDescription(`**Ball landed on: ${spin}**\n${resultText}`)
+    .addFields(
+      { name: 'Bet Amount', value: `${betAmount} points`, inline: true },
+      { name: 'Result', value: won ? `+${payout - betAmount} points` : `-${betAmount} points`, inline: true },
+      { name: 'New Balance', value: `${vouchPoints.get(userId)} points`, inline: true }
+    )
+    .setFooter({ text: `${interaction.user.username}` })
+    .setTimestamp();
+  
+  await interaction.reply({ embeds: [embed] });
+}
+
 // Blackjack game storage
 const blackjackGames = new Map();
 
@@ -340,6 +512,42 @@ async function playBlackjack(message, betAmount) {
   await reply.react('❌'); // quit
 }
 
+// Slash command version of blackjack
+async function playBlackjackSlash(interaction, betAmount) {
+  const userId = interaction.user.id;
+  
+  // Create deck and deal cards
+  const deck = createDeck();
+  const playerHand = [drawCard(deck), drawCard(deck)];
+  const dealerHand = [drawCard(deck), drawCard(deck)];
+  
+  const game = {
+    deck,
+    playerHand,
+    dealerHand,
+    betAmount,
+    userId,
+    isSlashCommand: true
+  };
+  
+  blackjackGames.set(userId, game);
+  
+  const playerValue = getHandValue(playerHand);
+  
+  if (playerValue === 21) {
+    // Blackjack!
+    return handleBlackjackEndSlash(interaction, true, 'Blackjack! 🎉');
+  }
+  
+  const embed = createBlackjackEmbed(game, false);
+  const reply = await interaction.reply({ embeds: [embed], fetchReply: true });
+  
+  // Add reactions for game controls
+  await reply.react('🃏'); // hit
+  await reply.react('✋'); // stand
+  await reply.react('❌'); // quit
+}
+
 // Handle blackjack reactions
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   if (user.bot) return;
@@ -357,16 +565,28 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
     const playerValue = getHandValue(game.playerHand);
     
     if (playerValue > 21) {
-      handleBlackjackEnd(reaction.message, false, 'Bust! You went over 21');
+      if (game.isSlashCommand) {
+        handleBlackjackEndSlash(reaction.message, false, 'Bust! You went over 21');
+      } else {
+        handleBlackjackEnd(reaction.message, false, 'Bust! You went over 21');
+      }
     } else if (playerValue === 21) {
-      handleBlackjackEnd(reaction.message, null, 'You got 21! Dealer\'s turn...');
+      if (game.isSlashCommand) {
+        handleBlackjackEndSlash(reaction.message, null, 'You got 21! Dealer\'s turn...');
+      } else {
+        handleBlackjackEnd(reaction.message, null, 'You got 21! Dealer\'s turn...');
+      }
     } else {
       const embed = createBlackjackEmbed(game, false);
       reaction.message.edit({ embeds: [embed] });
     }
   } else if (emoji === '✋') {
     // Stand
-    handleBlackjackEnd(reaction.message, null, 'You stand. Dealer\'s turn...');
+    if (game.isSlashCommand) {
+      handleBlackjackEndSlash(reaction.message, null, 'You stand. Dealer\'s turn...');
+    } else {
+      handleBlackjackEnd(reaction.message, null, 'You stand. Dealer\'s turn...');
+    }
   } else if (emoji === '❌') {
     // Quit
     blackjackGames.delete(user.id);
@@ -510,6 +730,83 @@ async function handleBlackjackEnd(message, playerWon, reason) {
   
   await message.edit({ embeds: [embed] });
   message.reactions.removeAll();
+}
+
+// Slash command version of handleBlackjackEnd
+async function handleBlackjackEndSlash(messageOrInteraction, playerWon, reason) {
+  // Find the game based on the user who reacted
+  let userId;
+  if (messageOrInteraction.author) {
+    // This is a message from reaction
+    const games = Array.from(blackjackGames.entries());
+    const gameEntry = games.find(([, game]) => game.isSlashCommand);
+    if (!gameEntry) return;
+    userId = gameEntry[0];
+  } else {
+    // This is an interaction
+    userId = messageOrInteraction.user.id;
+  }
+  
+  const game = blackjackGames.get(userId);
+  if (!game) return;
+  
+  // Play out dealer's hand if needed
+  if (playerWon === null) {
+    while (getHandValue(game.dealerHand) < 17) {
+      game.dealerHand.push(drawCard(game.deck));
+    }
+    
+    const playerValue = getHandValue(game.playerHand);
+    const dealerValue = getHandValue(game.dealerHand);
+    
+    if (dealerValue > 21) {
+      playerWon = true;
+      reason = 'Dealer busted!';
+    } else if (dealerValue > playerValue) {
+      playerWon = false;
+      reason = 'Dealer wins!';
+    } else if (playerValue > dealerValue) {
+      playerWon = true;
+      reason = 'You win!';
+    } else {
+      playerWon = null;
+      reason = 'Push (tie)!';
+    }
+  }
+  
+  // Update points
+  const currentPoints = vouchPoints.get(game.userId) || 0;
+  let newPoints = currentPoints;
+  
+  if (playerWon === true) {
+    newPoints = currentPoints + game.betAmount;
+  } else if (playerWon === false) {
+    newPoints = currentPoints - game.betAmount;
+  }
+  // If tie (playerWon === null), points stay the same
+  
+  vouchPoints.set(game.userId, newPoints);
+  savePoints(); // Save after blackjack
+  blackjackGames.delete(game.userId);
+  
+  const embed = new EmbedBuilder()
+    .setColor(playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFFF00)
+    .setTitle('🃏 Blackjack - Game Over')
+    .setDescription(reason)
+    .addFields(
+      { name: `Your Hand (${getHandValue(game.playerHand)})`, value: game.playerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
+      { name: `Dealer Hand (${getHandValue(game.dealerHand)})`, value: game.dealerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
+      { name: 'Result', value: playerWon === true ? `+${game.betAmount} points` : playerWon === false ? `-${game.betAmount} points` : 'No change', inline: true },
+      { name: 'New Balance', value: `${newPoints} points`, inline: true }
+    )
+    .setTimestamp();
+  
+  if (messageOrInteraction.edit) {
+    await messageOrInteraction.edit({ embeds: [embed] });
+    messageOrInteraction.reactions.removeAll();
+  } else {
+    await messageOrInteraction.editReply({ embeds: [embed] });
+  }
 }
 
 client.login(process.env.DISCORD_TOKEN); 

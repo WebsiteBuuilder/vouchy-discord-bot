@@ -58,8 +58,14 @@ Edit these constants in `index.js`:
 - `/points [user]` - Check vouch points for yourself or another user
 - `/leaderboard` - Show top 10 users by vouch points
 - `/addpoints <user> <amount> [reason]` - Manually add/remove points (Admin only)
+- `/roulette <amount> <bet> [number]` - Play roulette with your points
+  - Bet options: Red (2x), Black (2x), Green (14x), Number 0-36 (35x)
+  - Use `number` parameter when betting on specific numbers
+- `/blackjack <amount>` - Play blackjack with your points
+  - React with 🃏 to hit, ✋ to stand, ❌ to quit
+- `/send <user> <amount> [message]` - Send points to another user
 
-### Gambling Commands (in gambling channel)
+### Legacy Message Commands (in gambling channel)
 - `!balance` - Check your current point balance
 - `!roulette <amount> <bet>` - Play roulette
   - Bet options: `red`, `black`, `green`, or specific number (0-36)
@@ -77,7 +83,19 @@ Edit these constants in `index.js`:
 
 ## Examples
 
-### Gambling Commands
+### Slash Commands
+```
+/points @user
+/leaderboard
+/roulette 10 red
+/roulette 5 black  
+/roulette 2 green
+/roulette 1 number 17
+/blackjack 15
+/send @friend 50 "Thanks for the help!"
+```
+
+### Legacy Gambling Commands
 ```
 !balance
 !roulette 10 red
