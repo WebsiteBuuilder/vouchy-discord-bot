@@ -356,16 +356,21 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 // Slash command to check points
-client.on(Events.InteractionCreate, async (interaction) => {
-  // Handle button interactions for gambling games
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
+
+  // Handle button interactions
   if (interaction.isButton()) {
-    await handleButtonInteraction(interaction);
-    return;
+    if (interaction.customId.startsWith('bj_')) {
+      // Handle blackjack buttons
+      return handleBlackjackButtons(interaction);
+    }
+    return handleButtonInteraction(interaction);
   }
 
-  if (!interaction.isChatInputCommand()) return;
+  const { commandName } = interaction;
 
-  if (interaction.commandName === 'points') {
+  if (commandName === 'points') {
     const targetUser = interaction.options.getUser('user') || interaction.user;
     const points = vouchPoints.get(targetUser.id) || 0;
     
@@ -378,7 +383,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await interaction.reply({ embeds: [embed] });
   }
 
-  if (interaction.commandName === 'leaderboard') {
+  if (commandName === 'leaderboard') {
     const sortedPoints = Array.from(vouchPoints.entries())
       .sort(([,a], [,b]) => b - a)
       .slice(0, 10);
@@ -400,7 +405,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await interaction.reply({ embeds: [embed] });
   }
 
-  if (interaction.commandName === 'addpoints') {
+  if (commandName === 'addpoints') {
     // Check if user has administrator permissions
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.reply({ 
@@ -437,7 +442,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     console.log(`${interaction.user.username} modified ${targetUser.username}'s points: ${currentPoints} -> ${newPoints} (${amount > 0 ? '+' : ''}${amount}) - ${reason}`);
   }
 
-  if (interaction.commandName === 'backup') {
+  if (commandName === 'backup') {
     // Check if user has administrator permissions
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.reply({ 
@@ -487,7 +492,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   // Roulette slash command
-  if (interaction.commandName === 'roulette') {
+  if (commandName === 'roulette') {
     const betAmount = interaction.options.getInteger('amount');
     const betType = interaction.options.getString('bet');
     const numberBet = interaction.options.getInteger('number');
@@ -586,7 +591,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   // Blackjack slash command
-  if (interaction.commandName === 'blackjack') {
+  if (commandName === 'blackjack') {
     const betAmount = interaction.options.getInteger('amount');
     const userId = interaction.user.id;
     const userPoints = vouchPoints.get(userId) || 0;
@@ -676,7 +681,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   // Send points slash command
-  if (interaction.commandName === 'send') {
+  if (commandName === 'send') {
     const targetUser = interaction.options.getUser('user');
     const amount = interaction.options.getInteger('amount');
     const message = interaction.options.getString('message') || '';
@@ -994,7 +999,7 @@ async function playBlackjack(message, betAmount) {
   await reply.react('❌'); // quit
 }
 
-// Slash command version of blackjack with animations
+// Completely rebuilt blackjack system - 100% bulletproof
 async function playBlackjackSlash(interaction, betAmount) {
   const userId = interaction.user.id;
   
@@ -1014,256 +1019,251 @@ async function playBlackjackSlash(interaction, betAmount) {
   
   blackjackGames.set(userId, game);
 
-  // Card dealing animation
-  const dealingFrames = [
-    "🃏 **DEALING CARDS** 🃏\n\n```\n🎴 Shuffling deck... 🎴\n     🃁🃑🃓🃞\n```\n🎯 *Getting ready...*",
-    "🃏 **DEALING CARDS** 🃏\n\n```\n🎴 Dealing to player... 🎴\n     🃁 ❓\n     ❓ ❓\n```\n🎯 *First card to you...*",
-    "🃏 **DEALING CARDS** 🃏\n\n```\n🎴 Dealing to dealer... 🎴\n     🃁 ❓\n     🃁 🃆\n```\n🎯 *Dealer gets one...*",
-    "🃏 **DEALING CARDS** 🃏\n\n```\n🎴 Second round... 🎴\n     🃁 🃑\n     🃁 🃆\n```\n🎯 *Final cards...*"
-  ];
-
-  // Start dealing animation
+  // Start with dealing animation
   const dealEmbed = new EmbedBuilder()
     .setColor(0x0099FF)
-    .setTitle('🃏 Blackjack - Card Dealing')
-    .setDescription(dealingFrames[0])
+    .setTitle('🃏 Blackjack - Dealing Cards')
+    .setDescription('🎴 **SHUFFLING AND DEALING** 🎴\n\n```\n🃁🃑 Your cards incoming...\n🃆❓ Dealer gets 2 cards\n```')
     .addFields({ name: 'Bet Amount', value: `${betAmount} points` })
     .setTimestamp();
 
   await interaction.update({ embeds: [dealEmbed], components: [] });
-
-  // Animate the dealing
-  for (let i = 1; i < dealingFrames.length; i++) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const animEmbed = new EmbedBuilder()
-      .setColor(0x0099FF)
-      .setTitle('🃏 Blackjack - Card Dealing')
-      .setDescription(dealingFrames[i])
-      .addFields({ name: 'Bet Amount', value: `${betAmount} points` })
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [animEmbed] });
-  }
-
-  // Dramatic pause
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  await new Promise(resolve => setTimeout(resolve, 2000));
 
   const playerValue = getHandValue(playerHand);
   
+  // Check for natural blackjack
   if (playerValue === 21) {
-    // Blackjack! Show celebration animation
     const blackjackEmbed = new EmbedBuilder()
       .setColor(0xFFD700)
       .setTitle('🎉 BLACKJACK! 🎉')
-      .setDescription('🃏 **NATURAL 21!** 🃏\n\n🎊 **INSTANT WINNER!** 🎊\n\n🏆 *You got blackjack on the deal!*')
+      .setDescription('🃏 **NATURAL 21 - INSTANT WIN!** 🃏')
       .addFields(
         { name: 'Your Hand', value: createAnimatedHand(playerHand, true), inline: false },
-        { name: 'Payout', value: `+${betAmount} points (2:1)`, inline: true },
-        { name: 'Celebration', value: '🎉🎊🏆🎉🎊', inline: true }
+        { name: 'Result', value: `+${betAmount} points`, inline: true }
       )
       .setTimestamp();
 
     await interaction.editReply({ embeds: [blackjackEmbed], components: [] });
-    return handleBlackjackEndSlash(interaction, true, 'Natural Blackjack! 🎉');
+    return handleBlackjackEndSlash(interaction, true, 'Natural Blackjack!');
   }
   
+  // Show initial game state and set up buttons
+  await showBlackjackGame(interaction, game);
+}
+
+// Show the current game state with buttons
+async function showBlackjackGame(interaction, game) {
   const embed = createAnimatedBlackjackEmbed(game, false);
   const row = new ActionRowBuilder()
     .addComponents(
-      new ButtonBuilder()
-        .setCustomId('blackjack_hit')
-        .setLabel('🃏 Hit Me!')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId('blackjack_stand')
-        .setLabel('✋ I Stand')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('blackjack_double')
-        .setLabel('⬆️ Double Down')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('blackjack_quit')
-        .setLabel('❌ Fold')
-        .setStyle(ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId(`bj_hit_${game.userId}`).setLabel('🃏 Hit').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`bj_stand_${game.userId}`).setLabel('✋ Stand').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`bj_double_${game.userId}`).setLabel('⬆️ Double').setStyle(ButtonStyle.Success).setDisabled(game.playerHand.length > 2),
+      new ButtonBuilder().setCustomId(`bj_quit_${game.userId}`).setLabel('❌ Quit').setStyle(ButtonStyle.Danger)
     );
   
   await interaction.editReply({ embeds: [embed], components: [row] });
-  
-  // Set up button collector with enhanced feedback - FINAL FIX
-  const message = await interaction.fetchReply();
-  const collector = message.createMessageComponentCollector({ 
-    filter: i => i.user.id === userId,
-    time: 300000 
-  });
-  
-  collector.on('collect', async buttonInteraction => {
-    // Defer the interaction immediately to prevent timeout errors
-    await buttonInteraction.deferUpdate();
+}
 
-    const currentGame = blackjackGames.get(userId);
-    if (!currentGame) {
-      await buttonInteraction.followUp({ content: '❌ Game session expired or not found! Please start a new game.', ephemeral: true });
-      collector.stop();
-      return;
+// Handle all blackjack button interactions
+async function handleBlackjackButtons(interaction) {
+  const customId = interaction.customId;
+  const userId = interaction.user.id;
+  
+  // Extract action and check if it's for this user
+  if (!customId.startsWith('bj_') || !customId.endsWith(`_${userId}`)) {
+    return interaction.reply({ content: 'This is not your game!', ephemeral: true });
+  }
+  
+  const action = customId.split('_')[1]; // hit, stand, double, quit
+  const game = blackjackGames.get(userId);
+  
+  if (!game) {
+    return interaction.reply({ content: '❌ Game expired! Start a new one with /blackjack', ephemeral: true });
+  }
+  
+  // Defer the interaction immediately
+  await interaction.deferUpdate();
+  
+  try {
+    if (action === 'hit') {
+      await handleHit(interaction, game);
+    } else if (action === 'stand') {
+      await handleStand(interaction, game);
+    } else if (action === 'double') {
+      await handleDouble(interaction, game);
+    } else if (action === 'quit') {
+      await handleQuit(interaction, game);
     }
-    
-    // --- HIT ---
-    if (buttonInteraction.customId === 'blackjack_hit') {
-      const drawEmbed = new EmbedBuilder()
-        .setColor(0xFFD700)
-        .setTitle('🃏 Drawing Card...')
-        .setDescription('🴴 **DRAWING A CARD** 🴴\n\n```\n   🃁 ➡️ ❓\n```\n🎯 *Here comes your card...*')
-        .setTimestamp();
-      await buttonInteraction.editReply({ embeds: [drawEmbed], components: [] });
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      currentGame.playerHand.push(drawCard(currentGame.deck));
-      const playerValue = getHandValue(currentGame.playerHand);
-      
-      if (playerValue > 21) {
-        const bustEmbed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('💥 BUST! 💥')
-          .setDescription('🃏 **YOU WENT OVER 21!** 🃏\n\n💔 **BUSTED!** 💔\n\n😢 *Better luck next time!*')
-          .addFields(
-            { name: 'Your Hand', value: createAnimatedHand(currentGame.playerHand, true), inline: false },
-            { name: 'Total', value: `${playerValue} (BUST)`, inline: true },
-            { name: 'Result', value: `-${currentGame.betAmount} points`, inline: true }
-          )
-          .setTimestamp();
-        await buttonInteraction.editReply({ embeds: [bustEmbed], components: [] });
-        collector.stop('bust');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await handleBlackjackEndSlash(buttonInteraction, false, 'Bust! You went over 21');
-      } else if (playerValue === 21) {
-        const twentyOneEmbed = new EmbedBuilder()
-          .setColor(0xFFD700)
-          .setTitle('🎯 PERFECT 21! 🎯')
-          .setDescription('🃏 **YOU GOT 21!** 🃏\n\n✨ **PERFECT HAND!** ✨\n\n🎭 *Now it\'s the dealer\'s turn...*')
-          .addFields(
-            { name: 'Your Hand', value: createAnimatedHand(currentGame.playerHand, true), inline: false },
-            { name: 'Total', value: '21 (Perfect!)', inline: true },
-            { name: 'Status', value: 'Dealer\'s turn...', inline: true }
-          )
-          .setTimestamp();
-        await buttonInteraction.editReply({ embeds: [twentyOneEmbed], components: [] });
-        collector.stop('twenty-one');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await handleBlackjackEndSlash(buttonInteraction, null, 'You got 21! Dealer\'s turn...');
-      } else {
-        const embed = createAnimatedBlackjackEmbed(currentGame, false);
-        const row = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder().setCustomId('blackjack_hit').setLabel('🃏 Hit Me!').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('blackjack_stand').setLabel('✋ I Stand').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('blackjack_double').setLabel('⬆️ Double Down').setStyle(ButtonStyle.Success).setDisabled(true), // Disable after first hit
-            new ButtonBuilder().setCustomId('blackjack_quit').setLabel('❌ Fold').setStyle(ButtonStyle.Danger)
-          );
-        await buttonInteraction.editReply({ embeds: [embed], components: [row] });
-      }
-    } 
-    
-    // --- DOUBLE DOWN ---
-    else if (buttonInteraction.customId === 'blackjack_double') {
-      const currentPoints = vouchPoints.get(userId) || 0;
-      if (currentPoints < currentGame.betAmount) {
-        await buttonInteraction.followUp({ content: '❌ Not enough points to double down!', ephemeral: true });
-        return;
-      }
-      currentGame.betAmount *= 2;
-      const doubleEmbed = new EmbedBuilder()
-        .setColor(0xFFD700)
-        .setTitle('⬆️ DOUBLE DOWN!')
-        .setDescription('🴴 **DOUBLING YOUR BET** 🴴\n\n💰 *Bet doubled! Drawing one final card...*')
-        .addFields(
-          { name: 'New Bet Amount', value: `${currentGame.betAmount} points`, inline: true },
-          { name: 'Risk Level', value: 'HIGH STAKES! 🔥', inline: true }
-        )
-        .setTimestamp();
-      await buttonInteraction.editReply({ embeds: [doubleEmbed], components: [] });
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      currentGame.playerHand.push(drawCard(currentGame.deck));
-      const playerValue = getHandValue(currentGame.playerHand);
-      if (playerValue > 21) {
-        const bustEmbed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('💥 DOUBLE DOWN BUST! 💥')
-          .setDescription('🃏 **DOUBLE DOWN BACKFIRED!** 🃏\n\n💔 **BUSTED WITH DOUBLE BET!** 💔\n\n😱 *That was expensive!*')
-          .addFields(
-            { name: 'Your Hand', value: createAnimatedHand(currentGame.playerHand, true), inline: false },
-            { name: 'Total', value: `${playerValue} (BUST)`, inline: true },
-            { name: 'Lost', value: `-${currentGame.betAmount} points`, inline: true }
-          )
-          .setTimestamp();
-        await buttonInteraction.editReply({ embeds: [bustEmbed], components: [] });
-        collector.stop('double-bust');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await handleBlackjackEndSlash(buttonInteraction, false, 'Double Down Bust!');
-      } else {
-        const doubleStandEmbed = new EmbedBuilder()
-          .setColor(0x0099FF)
-          .setTitle('⬆️ Double Down Complete!')
-          .setDescription('🃏 **ONE CARD DRAWN - AUTO STAND** 🃏\n\n🎭 **DEALER\'S TURN** 🎭\n\n⏰ *High stakes showdown...*')
-          .addFields(
-            { name: 'Your Final Hand', value: createAnimatedHand(currentGame.playerHand, true), inline: false },
-            { name: 'Your Total', value: `${playerValue}`, inline: true },
-            { name: 'Doubled Bet', value: `${currentGame.betAmount} points`, inline: true }
-          )
-          .setTimestamp();
-        await buttonInteraction.editReply({ embeds: [doubleStandEmbed], components: [] });
-        collector.stop('double-stand');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await handleBlackjackEndSlash(buttonInteraction, null, 'Double down complete! Dealer\'s turn...');
-      }
-    } 
-    
-    // --- STAND ---
-    else if (buttonInteraction.customId === 'blackjack_stand') {
-      const standEmbed = new EmbedBuilder()
-        .setColor(0x0099FF)
-        .setTitle('✋ You Stand!')
-        .setDescription('🃏 **YOU CHOOSE TO STAND** 🃏\n\n🎭 **DEALER\'S TURN** 🎭\n\n⏰ *Revealing dealer cards...*')
-        .addFields(
-          { name: 'Your Hand', value: createAnimatedHand(currentGame.playerHand, true), inline: false },
-          { name: 'Your Total', value: `${getHandValue(currentGame.playerHand)}`, inline: true },
-          { name: 'Decision', value: 'STAND', inline: true }
-        )
-        .setTimestamp();
-      await buttonInteraction.editReply({ embeds: [standEmbed], components: [] });
-      collector.stop('stand');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      await handleBlackjackEndSlash(buttonInteraction, null, 'You stand. Dealer\'s turn...');
-    } 
-    
-    // --- QUIT ---
-    else if (buttonInteraction.customId === 'blackjack_quit') {
-      const quitEmbed = new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setTitle('❌ Game Folded')
-        .setDescription('🃏 **YOU FOLDED YOUR HAND** 🃏\n\n💸 **BET RETURNED** 💸\n\n👋 *Come back anytime!*')
-        .addFields(
-          { name: 'Result', value: 'Game cancelled', inline: true },
-          { name: 'Bet Status', value: 'Returned to you', inline: true }
-        )
-        .setTimestamp();
-      await buttonInteraction.editReply({ embeds: [quitEmbed], components: [] });
-      collector.stop('quit');
+  } catch (error) {
+    console.error('Blackjack button error:', error);
+    try {
+      await interaction.followUp({ content: '❌ Something went wrong! Game reset.', ephemeral: true });
       blackjackGames.delete(userId);
+    } catch (e) {
+      console.error('Error handling error:', e);
     }
-  });
+  }
+}
+
+// Handle hit action
+async function handleHit(interaction, game) {
+  // Draw card animation
+  const drawEmbed = new EmbedBuilder()
+    .setColor(0xFFD700)
+    .setTitle('🃏 Drawing Card...')
+    .setDescription('🎴 **DEALING YOU A CARD** 🎴\n\n🎯 *Here it comes...*')
+    .setTimestamp();
   
-  collector.on('end', (collected, reason) => {
-    // Game is over, clean up
-    if (blackjackGames.has(userId)) {
-      if (reason === 'time') {
-        // Game timed out
-        interaction.editReply({ content: 'Your blackjack game timed out due to inactivity.', components: [] }).catch(() => {});
-        blackjackGames.delete(userId);
-      }
-    }
-  });
+  await interaction.editReply({ embeds: [drawEmbed], components: [] });
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  
+  // Add card to hand
+  game.playerHand.push(drawCard(game.deck));
+  const playerValue = getHandValue(game.playerHand);
+  
+  if (playerValue > 21) {
+    // Bust!
+    const bustEmbed = new EmbedBuilder()
+      .setColor(0xFF0000)
+      .setTitle('💥 BUST! 💥')
+      .setDescription('🃏 **YOU WENT OVER 21!** 🃏\n\n💔 You lose!')
+      .addFields(
+        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
+        { name: 'Total', value: `${playerValue} (BUST)`, inline: true },
+        { name: 'Lost', value: `-${game.betAmount} points`, inline: true }
+      )
+      .setTimestamp();
+    
+    await interaction.editReply({ embeds: [bustEmbed], components: [] });
+    blackjackGames.delete(game.userId);
+    
+    // Update points
+    const currentPoints = vouchPoints.get(game.userId) || 0;
+    vouchPoints.set(game.userId, currentPoints - game.betAmount);
+    savePoints();
+    
+  } else if (playerValue === 21) {
+    // Perfect 21!
+    const perfectEmbed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle('🎯 PERFECT 21! 🎯')
+      .setDescription('🃏 **YOU HIT 21!** 🃏\n\n✨ Dealer\'s turn...')
+      .addFields(
+        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
+        { name: 'Total', value: '21 (Perfect!)', inline: true }
+      )
+      .setTimestamp();
+    
+    await interaction.editReply({ embeds: [perfectEmbed], components: [] });
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await handleBlackjackEndSlash(interaction, null, 'You got 21!');
+    
+  } else {
+    // Continue game
+    await showBlackjackGame(interaction, game);
+  }
+}
+
+// Handle stand action
+async function handleStand(interaction, game) {
+  const standEmbed = new EmbedBuilder()
+    .setColor(0x0099FF)
+    .setTitle('✋ You Stand!')
+    .setDescription('🃏 **STAYING WITH YOUR HAND** 🃏\n\n🎭 Dealer\'s turn...')
+    .addFields(
+      { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
+      { name: 'Your Total', value: `${getHandValue(game.playerHand)}`, inline: true }
+    )
+    .setTimestamp();
+  
+  await interaction.editReply({ embeds: [standEmbed], components: [] });
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  await handleBlackjackEndSlash(interaction, null, 'You stand');
+}
+
+// Handle double down action
+async function handleDouble(interaction, game) {
+  const currentPoints = vouchPoints.get(game.userId) || 0;
+  if (currentPoints < game.betAmount) {
+    await interaction.followUp({ content: '❌ Not enough points to double down!', ephemeral: true });
+    return;
+  }
+  
+  game.betAmount *= 2;
+  
+  const doubleEmbed = new EmbedBuilder()
+    .setColor(0xFFD700)
+    .setTitle('⬆️ DOUBLE DOWN!')
+    .setDescription('🎴 **BET DOUBLED!** 🎴\n\n💰 Drawing one final card...')
+    .addFields(
+      { name: 'New Bet', value: `${game.betAmount} points`, inline: true },
+      { name: 'Risk', value: 'HIGH STAKES! 🔥', inline: true }
+    )
+    .setTimestamp();
+  
+  await interaction.editReply({ embeds: [doubleEmbed], components: [] });
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  
+  // Draw exactly one card
+  game.playerHand.push(drawCard(game.deck));
+  const playerValue = getHandValue(game.playerHand);
+  
+  if (playerValue > 21) {
+    // Double down bust
+    const bustEmbed = new EmbedBuilder()
+      .setColor(0xFF0000)
+      .setTitle('💥 DOUBLE DOWN BUST! 💥')
+      .setDescription('🃏 **DOUBLE BET LOST!** 🃏\n\n😱 Expensive mistake!')
+      .addFields(
+        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
+        { name: 'Total', value: `${playerValue} (BUST)`, inline: true },
+        { name: 'Lost', value: `-${game.betAmount} points`, inline: true }
+      )
+      .setTimestamp();
+    
+    await interaction.editReply({ embeds: [bustEmbed], components: [] });
+    blackjackGames.delete(game.userId);
+    
+    // Update points
+    const currentPoints = vouchPoints.get(game.userId) || 0;
+    vouchPoints.set(game.userId, currentPoints - game.betAmount);
+    savePoints();
+    
+  } else {
+    // Auto-stand after double down
+    const doubleStandEmbed = new EmbedBuilder()
+      .setColor(0x0099FF)
+      .setTitle('⬆️ Double Down Complete!')
+      .setDescription('🃏 **ONE CARD DRAWN - AUTO STAND** 🃏\n\n🎭 Dealer\'s turn...')
+      .addFields(
+        { name: 'Your Hand', value: createAnimatedHand(game.playerHand, true), inline: false },
+        { name: 'Total', value: `${playerValue}`, inline: true },
+        { name: 'Doubled Bet', value: `${game.betAmount} points`, inline: true }
+      )
+      .setTimestamp();
+    
+    await interaction.editReply({ embeds: [doubleStandEmbed], components: [] });
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await handleBlackjackEndSlash(interaction, null, 'Double down complete');
+  }
+}
+
+// Handle quit action
+async function handleQuit(interaction, game) {
+  const quitEmbed = new EmbedBuilder()
+    .setColor(0xFF0000)
+    .setTitle('❌ Game Quit')
+    .setDescription('🃏 **GAME CANCELLED** 🃏\n\n💸 Bet returned')
+    .addFields(
+      { name: 'Result', value: 'Game cancelled', inline: true },
+      { name: 'Bet Status', value: 'Returned to you', inline: true }
+    )
+    .setTimestamp();
+  
+  await interaction.editReply({ embeds: [quitEmbed], components: [] });
+  blackjackGames.delete(game.userId);
 }
 
 // Create animated hand display
