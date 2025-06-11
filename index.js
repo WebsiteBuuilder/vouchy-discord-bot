@@ -1450,6 +1450,15 @@ async function handleRecountVouches(interaction) {
     if (!providerRole) {
         return safeReply(interaction, { content: `❌ Provider role "${PROVIDER_ROLE_NAME}" not found. Cannot perform recount.` });
     }
+    
+    // --- OPTIMIZATION: Fetch all providers ONCE to avoid rate limits ---
+    await interaction.followUp({ content: 'Fetching all server members to identify providers... (This may take a moment)', ephemeral: true });
+    await guild.members.fetch();
+    const providerIds = new Set(providerRole.members.map(member => member.id));
+
+    if (providerIds.size === 0) {
+        return safeReply(interaction, { content: `❌ No users found with the "${PROVIDER_ROLE_NAME}" role.` });
+    }
 
     const vouchChannels = guild.channels.cache.filter(c =>
         c.isTextBased() &&
@@ -1466,13 +1475,13 @@ async function handleRecountVouches(interaction) {
     let foundVouches = 0;
     let totalPointsAwarded = 0;
 
-    await safeReply(interaction, { content: `⏳ **Recounting vouches...**\n\n- Wiped all existing points.\n- Found ${vouchChannels.size} vouch channel(s) to scan.\n- This may take a few minutes...` });
+    await safeReply(interaction, { content: `⏳ **Recounting vouches...**\n\n- Wiped all existing points.\n- Found ${providerIds.size} providers.\n- Scanning ${vouchChannels.size} channel(s). This may take several minutes for a large history.` });
 
     for (const channel of vouchChannels.values()) {
         let lastId;
         while (true) {
-            const messages = await channel.messages.fetch({ limit: 100, before: lastId });
-            if (messages.size === 0) break;
+            const messages = await channel.messages.fetch({ limit: 100, before: lastId }).catch(() => null);
+            if (!messages || messages.size === 0) break;
 
             for (const message of messages.values()) {
                 processedMessages++;
@@ -1482,16 +1491,12 @@ async function handleRecountVouches(interaction) {
                 if (hasImage && mentionedUsers.size > 0) {
                     let providersInVouch = 0;
                     for (const user of mentionedUsers.values()) {
-                        try {
-                            const member = await guild.members.fetch(user.id);
-                            if (member && member.roles.cache.has(providerRole.id)) {
-                                const currentPoints = vouchPoints.get(user.id) || 0;
-                                vouchPoints.set(user.id, currentPoints + POINTS_PER_VOUCH);
-                                totalPointsAwarded += POINTS_PER_VOUCH;
-                                providersInVouch++;
-                            }
-                        } catch (err) {
-                            // Ignore errors for users who may have left the server
+                        // --- OPTIMIZED CHECK ---
+                        if (providerIds.has(user.id)) {
+                            const currentPoints = vouchPoints.get(user.id) || 0;
+                            vouchPoints.set(user.id, currentPoints + POINTS_PER_VOUCH);
+                            totalPointsAwarded += POINTS_PER_VOUCH;
+                            providersInVouch++;
                         }
                     }
                     if (providersInVouch > 0) {
@@ -1510,9 +1515,9 @@ async function handleRecountVouches(interaction) {
         .setTitle('✅ Recount Complete!')
         .setDescription('All points have been recalculated from the vouch channel history.')
         .addFields(
-            { name: '📊 Messages Scanned', value: `${processedMessages}`, inline: true },
-            { name: '🖼️ Valid Vouches Found', value: `${foundVouches}`, inline: true },
-            { name: '💰 Total Points Awarded', value: `${totalPointsAwarded}`, inline: true }
+            { name: '📊 Messages Scanned', value: `~${processedMessages.toLocaleString()}`, inline: true },
+            { name: '🖼️ Valid Vouches Found', value: `${foundVouches.toLocaleString()}`, inline: true },
+            { name: '💰 Total Points Awarded', value: `${totalPointsAwarded.toLocaleString()}`, inline: true }
         )
         .setTimestamp();
 
