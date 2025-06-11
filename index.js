@@ -3,116 +3,289 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// Persistent storage for points - use Railway volume mount
-const VOLUME_PATH = '/app/data';
-const POINTS_FILE = path.join(VOLUME_PATH, 'points.json');
-const BACKUP_POINTS_FILE = path.join(VOLUME_PATH, 'points-backup.json');
+// UNBREAKABLE PERSISTENCE SYSTEM - Multiple redundant storage locations
+const STORAGE_STRATEGY = {
+  // Railway volume mount (if available)
+  railway: '/app/data',
+  // Local project directory (always works)
+  local: './data',
+  // Root project directory (fallback)
+  root: './',
+  // System temp (emergency)
+  temp: '/tmp',
+  // Railway's persistent storage environment variable path
+  railwayPersistent: process.env.RAILWAY_VOLUME_MOUNT_PATH || '/data'
+};
+
+const BACKUP_FILES = ['points.json', 'points-backup.json', 'points-emergency.json', 'points-recovery.json'];
+let ACTIVE_STORAGE_PATHS = [];
+let SUCCESSFUL_SAVE_LOCATIONS = [];
+
+// Initialize unbreakable storage system
+function initializeUnbreakableStorage() {
+  console.log('🛡️ Initializing UNBREAKABLE storage system...');
+  
+  ACTIVE_STORAGE_PATHS = [];
+  
+  // Test all storage locations
+  Object.entries(STORAGE_STRATEGY).forEach(([name, location]) => {
+    try {
+      // Ensure directory exists
+      if (!fs.existsSync(location)) {
+        fs.mkdirSync(location, { recursive: true });
+      }
+      
+      // Test write permissions with unique test file
+      const testFile = path.join(location, `test-${Date.now()}.json`);
+      const testData = { test: true, timestamp: Date.now(), location: name };
+      fs.writeFileSync(testFile, JSON.stringify(testData));
+      
+      // Test read permissions
+      const readData = JSON.parse(fs.readFileSync(testFile, 'utf8'));
+      
+      // Clean up test file
+      fs.unlinkSync(testFile);
+      
+      // This location is working
+      ACTIVE_STORAGE_PATHS.push({ name, path: location });
+      console.log(`✅ Storage location "${name}" active: ${location}`);
+      
+    } catch (error) {
+      console.log(`❌ Storage location "${name}" failed: ${location} - ${error.message}`);
+    }
+  });
+  
+  if (ACTIVE_STORAGE_PATHS.length === 0) {
+    console.error('💥 CRITICAL: NO STORAGE LOCATIONS AVAILABLE!');
+    throw new Error('Cannot initialize storage - no writable locations found');
+  }
+  
+  console.log(`🔒 ${ACTIVE_STORAGE_PATHS.length} storage locations active and ready`);
+  return true;
+}
+
 const vouchPoints = new Map();
 
-// Load points from file on startup
-function loadPoints() {
-  try {
-    // Ensure the volume directory exists
-    if (!fs.existsSync(VOLUME_PATH)) {
-      fs.mkdirSync(VOLUME_PATH, { recursive: true });
-      console.log(`📁 Created directory: ${VOLUME_PATH}`);
-    }
-    
-    // Try to load from main points file
-    if (fs.existsSync(POINTS_FILE)) {
-      try {
-        const data = fs.readFileSync(POINTS_FILE, 'utf8');
-        const pointsObj = JSON.parse(data);
-        Object.entries(pointsObj).forEach(([userId, points]) => {
-          vouchPoints.set(userId, points);
-        });
-        console.log(`✅ Loaded ${vouchPoints.size} user points from ${POINTS_FILE}`);
-        
-        // Create backup on successful load
-        fs.writeFileSync(BACKUP_POINTS_FILE, data);
-        console.log(`💾 Created backup at ${BACKUP_POINTS_FILE}`);
-        
-      } catch (error) {
-        console.error(`❌ Error reading main points file: ${error.message}`);
-        console.log(`🔄 Attempting to load from backup...`);
-        
-        // Try backup file
-        if (fs.existsSync(BACKUP_POINTS_FILE)) {
-          const backupData = fs.readFileSync(BACKUP_POINTS_FILE, 'utf8');
-          const pointsObj = JSON.parse(backupData);
-          Object.entries(pointsObj).forEach(([userId, points]) => {
-            vouchPoints.set(userId, points);
-          });
-          console.log(`✅ Loaded ${vouchPoints.size} user points from backup`);
-          
-          // Restore main file from backup
-          fs.writeFileSync(POINTS_FILE, backupData);
-          console.log(`🔄 Restored main points file from backup`);
-        }
-      }
-    } else {
-      console.log(`📋 No points file found at ${POINTS_FILE}, starting fresh`);
+// UNBREAKABLE POINTS LOADING - scans ALL locations for data
+function loadPointsUnbreakable() {
+  console.log('📥 Loading points with UNBREAKABLE system...');
+  
+  if (ACTIVE_STORAGE_PATHS.length === 0) {
+    initializeUnbreakableStorage();
+  }
+  
+  let pointsLoaded = false;
+  let bestDataSource = null;
+  let maxPointsFound = 0;
+  
+  // Scan ALL storage locations for point files
+  for (const storage of ACTIVE_STORAGE_PATHS) {
+    for (const filename of BACKUP_FILES) {
+      const filePath = path.join(storage.path, filename);
       
-      // Check if backup exists
-      if (fs.existsSync(BACKUP_POINTS_FILE)) {
-        console.log(`🔄 Found backup file, restoring...`);
-        const backupData = fs.readFileSync(BACKUP_POINTS_FILE, 'utf8');
-        const pointsObj = JSON.parse(backupData);
-        Object.entries(pointsObj).forEach(([userId, points]) => {
-          vouchPoints.set(userId, points);
-        });
-        console.log(`✅ Loaded ${vouchPoints.size} user points from backup`);
-        
-        // Restore main file
-        fs.writeFileSync(POINTS_FILE, backupData);
-        console.log(`🔄 Restored main points file`);
+      try {
+        if (fs.existsSync(filePath)) {
+          console.log(`🔍 Scanning: ${storage.name}/${filename}`);
+          
+          const data = fs.readFileSync(filePath, 'utf8');
+          if (!data.trim()) {
+            console.log(`⚠️ Empty file: ${filePath}`);
+            continue;
+          }
+          
+          const pointsData = JSON.parse(data);
+          let userCount = 0;
+          let totalPoints = 0;
+          
+          // Count users and points to find the best data source
+          if (Array.isArray(pointsData)) {
+            userCount = pointsData.length;
+            totalPoints = pointsData.reduce((sum, [, points]) => sum + (points || 0), 0);
+          } else if (typeof pointsData === 'object') {
+            userCount = Object.keys(pointsData).length;
+            totalPoints = Object.values(pointsData).reduce((sum, points) => sum + (points || 0), 0);
+          }
+          
+          console.log(`📊 Found ${userCount} users with ${totalPoints} total points in ${storage.name}/${filename}`);
+          
+          // Use the data source with the most users/points (most recent/complete)
+          if (userCount > maxPointsFound) {
+            maxPointsFound = userCount;
+            bestDataSource = { storage, filename, data: pointsData, userCount, totalPoints };
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error reading ${filePath}: ${error.message}`);
       }
     }
+  }
+  
+  if (bestDataSource) {
+    console.log(`🏆 Best data source: ${bestDataSource.storage.name}/${bestDataSource.filename}`);
+    console.log(`📈 Loading ${bestDataSource.userCount} users with ${bestDataSource.totalPoints} total points`);
     
-    console.log(`🎯 Points tracking system ready with ${vouchPoints.size} users`);
+    // Clear existing data
+    vouchPoints.clear();
     
-  } catch (error) {
-    console.error('💥 Critical error loading points:', error);
-    console.log('🚀 Starting with empty points database');
+    // Load the best data
+    if (Array.isArray(bestDataSource.data)) {
+      bestDataSource.data.forEach(([userId, points]) => {
+        if (userId && typeof points === 'number') {
+          vouchPoints.set(userId, points);
+        }
+      });
+    } else if (typeof bestDataSource.data === 'object') {
+      Object.entries(bestDataSource.data).forEach(([userId, points]) => {
+        if (userId && typeof points === 'number') {
+          vouchPoints.set(userId, points);
+        }
+      });
+    }
+    
+    pointsLoaded = true;
+    console.log(`✅ Successfully loaded ${vouchPoints.size} users from best source`);
+    
+    // Immediately create backups in all locations
+    savePointsUnbreakable();
+    
+  } else {
+    console.log('📋 No existing points found - starting fresh');
+  }
+  
+  console.log(`🎯 Points system ready with ${vouchPoints.size} users`);
+  console.log(`💾 Data will be saved to ${ACTIVE_STORAGE_PATHS.length} locations for maximum safety`);
+}
+
+// UNBREAKABLE POINTS SAVING - saves to ALL available locations
+function savePointsUnbreakable() {
+  const startTime = Date.now();
+  console.log(`💾 UNBREAKABLE SAVE: Saving ${vouchPoints.size} users to ALL locations...`);
+  
+  const pointsObj = {};
+  vouchPoints.forEach((points, userId) => {
+    pointsObj[userId] = points;
+  });
+  
+  const jsonData = JSON.stringify(pointsObj, null, 2);
+  const metadata = {
+    timestamp: Date.now(),
+    userCount: vouchPoints.size,
+    totalPoints: Array.from(vouchPoints.values()).reduce((sum, points) => sum + points, 0),
+    version: "unbreakable-v1"
+  };
+  
+  SUCCESSFUL_SAVE_LOCATIONS = [];
+  let saveErrors = [];
+  
+  // Save to ALL active storage locations
+  for (const storage of ACTIVE_STORAGE_PATHS) {
+    try {
+      const locationSuccess = saveToLocation(storage, jsonData, metadata);
+      if (locationSuccess) {
+        SUCCESSFUL_SAVE_LOCATIONS.push(storage.name);
+        console.log(`✅ Saved to ${storage.name}: ${storage.path}`);
+      }
+    } catch (error) {
+      const errorMsg = `Failed to save to ${storage.name}: ${error.message}`;
+      saveErrors.push(errorMsg);
+      console.error(`❌ ${errorMsg}`);
+    }
+  }
+  
+  const saveTime = Date.now() - startTime;
+  
+  if (SUCCESSFUL_SAVE_LOCATIONS.length > 0) {
+    console.log(`🎉 SAVE SUCCESS: Data saved to ${SUCCESSFUL_SAVE_LOCATIONS.length}/${ACTIVE_STORAGE_PATHS.length} locations in ${saveTime}ms`);
+    console.log(`📍 Successful locations: ${SUCCESSFUL_SAVE_LOCATIONS.join(', ')}`);
+    return true;
+  } else {
+    console.error('💥 CRITICAL: ALL SAVE LOCATIONS FAILED!');
+    console.error('❌ Errors:', saveErrors);
+    
+    // Emergency console dump for manual recovery
+    console.log('🚨 EMERGENCY BACKUP - COPY THIS DATA:');
+    console.log('='.repeat(50));
+    console.log(JSON.stringify(pointsObj, null, 2));
+    console.log('='.repeat(50));
+    
+    return false;
   }
 }
 
-// Save points to file with backup
-function savePoints() {
-  try {
-    // Ensure the volume directory exists
-    if (!fs.existsSync(VOLUME_PATH)) {
-      fs.mkdirSync(VOLUME_PATH, { recursive: true });
-      console.log(`📁 Created directory: ${VOLUME_PATH}`);
-    }
-    
-    const pointsObj = {};
-    vouchPoints.forEach((points, userId) => {
-      pointsObj[userId] = points;
-    });
-    
-    const jsonData = JSON.stringify(pointsObj, null, 2);
-    
-    // Write to main file
-    fs.writeFileSync(POINTS_FILE, jsonData);
-    
-    // Write to backup file
-    fs.writeFileSync(BACKUP_POINTS_FILE, jsonData);
-    
-    console.log(`💾 Points saved successfully to ${POINTS_FILE} (${vouchPoints.size} users)`);
-    
-  } catch (error) {
-    console.error('❌ Error saving points:', error);
-    
-    // Try alternative method
+// Helper function to save to a specific location
+function saveToLocation(storage, jsonData, metadata) {
+  const location = storage.path;
+  
+  // Ensure directory exists
+  if (!fs.existsSync(location)) {
+    fs.mkdirSync(location, { recursive: true });
+  }
+  
+  let filesWritten = 0;
+  
+  // Write to all backup files
+  for (const filename of BACKUP_FILES) {
     try {
-      const pointsArray = Array.from(vouchPoints.entries());
-      fs.writeFileSync(path.join(VOLUME_PATH, 'points-emergency.json'), JSON.stringify(pointsArray));
-      console.log('🚨 Emergency backup created');
-    } catch (emergencyError) {
-      console.error('💥 Emergency backup also failed:', emergencyError);
+      const filePath = path.join(location, filename);
+      fs.writeFileSync(filePath, jsonData);
+      filesWritten++;
+    } catch (error) {
+      console.error(`⚠️ Failed to write ${filename} in ${storage.name}: ${error.message}`);
     }
   }
+  
+  // Write metadata file
+  try {
+    const metadataPath = path.join(location, 'points-metadata.json');
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+  } catch (error) {
+    console.error(`⚠️ Failed to write metadata in ${storage.name}: ${error.message}`);
+  }
+  
+  // Verify at least one file was written successfully
+  if (filesWritten > 0) {
+    // Verify data integrity
+    try {
+      const verifyPath = path.join(location, BACKUP_FILES[0]);
+      const verifyData = JSON.parse(fs.readFileSync(verifyPath, 'utf8'));
+      const verifyCount = Object.keys(verifyData).length;
+      
+      if (verifyCount === vouchPoints.size) {
+        return true;
+      } else {
+        throw new Error(`Verification failed: expected ${vouchPoints.size} users, got ${verifyCount}`);
+      }
+    } catch (error) {
+      throw new Error(`Verification failed: ${error.message}`);
+    }
+  }
+  
+  return false;
+}
+
+// Auto-save every 15 seconds for maximum safety
+setInterval(() => {
+  if (vouchPoints.size > 0) {
+    savePointsUnbreakable();
+  }
+}, 15000);
+
+// Initialize the unbreakable system immediately
+try {
+  initializeUnbreakableStorage();
+  loadPointsUnbreakable();
+} catch (error) {
+  console.error('💥 CRITICAL STORAGE ERROR:', error);
+  console.log('🚨 Starting with empty points - storage will be retried');
+}
+
+// Replace old functions with unbreakable versions
+function loadPoints() {
+  loadPointsUnbreakable();
+}
+
+function savePoints() {
+  return savePointsUnbreakable();
 }
 
 // Initialize storage and load points when the module loads
