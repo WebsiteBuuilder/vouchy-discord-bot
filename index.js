@@ -1450,15 +1450,6 @@ async function handleRecountVouches(interaction) {
     if (!providerRole) {
         return safeReply(interaction, { content: `❌ Provider role "${PROVIDER_ROLE_NAME}" not found. Cannot perform recount.` });
     }
-    
-    // --- OPTIMIZATION: Fetch all providers ONCE to avoid rate limits ---
-    await interaction.followUp({ content: 'Fetching all server members to identify providers... (This may take a moment)', ephemeral: true });
-    await guild.members.fetch();
-    const providerIds = new Set(providerRole.members.map(member => member.id));
-
-    if (providerIds.size === 0) {
-        return safeReply(interaction, { content: `❌ No users found with the "${PROVIDER_ROLE_NAME}" role.` });
-    }
 
     const vouchChannels = guild.channels.cache.filter(c =>
         c.isTextBased() &&
@@ -1469,14 +1460,55 @@ async function handleRecountVouches(interaction) {
         return safeReply(interaction, { content: '❌ No vouch channels found.' });
     }
 
-    // Reset points for a clean recount
+    await safeReply(interaction, { content: `**Phase 1/4:** ⌛ Scanning ${vouchChannels.size} channel(s) to find all mentioned users...` });
+
+    // --- PASS 1: Discover all mentioned users ---
+    const mentionedUserIds = new Set();
+    for (const channel of vouchChannels.values()) {
+        let lastId;
+        while (true) {
+            const messages = await channel.messages.fetch({ limit: 100, before: lastId }).catch(() => null);
+            if (!messages || messages.size === 0) break;
+
+            for (const message of messages.values()) {
+                if (message.mentions.users.size > 0) {
+                    message.mentions.users.forEach(user => mentionedUserIds.add(user.id));
+                }
+            }
+            lastId = messages.last().id;
+        }
+    }
+    
+    await interaction.editReply({ content: `**Phase 2/4:**  fetching roles for ${mentionedUserIds.size} users. This is much faster than fetching all server members.` });
+
+    // --- Step 2: Fetch ONLY the mentioned members and identify providers ---
+    const providerIds = new Set();
+    if (mentionedUserIds.size > 0) {
+        try {
+            const mentionedMembers = await guild.members.fetch({ user: Array.from(mentionedUserIds) });
+            mentionedMembers.forEach(member => {
+                if (member.roles.cache.has(providerRole.id)) {
+                    providerIds.add(member.id);
+                }
+            });
+        } catch (error) {
+            console.error("Error fetching mentioned members:", error);
+            return interaction.editReply({ content: "❌ An error occurred while fetching member data. Please try again."});
+        }
+    }
+    
+    if (providerIds.size === 0) {
+        return interaction.editReply({ content: `✅ Scan complete. No users with the "${PROVIDER_ROLE_NAME}" role were found in any vouches.`});
+    }
+
+    await interaction.editReply({ content: `**Phase 3/4:** ✅ Found ${providerIds.size} providers. Resetting points and starting final count...` });
+    
+    // --- PASS 2: Recalculate points with the known list of providers ---
     vouchPoints.clear();
     let processedMessages = 0;
     let foundVouches = 0;
     let totalPointsAwarded = 0;
-
-    await safeReply(interaction, { content: `⏳ **Recounting vouches...**\n\n- Wiped all existing points.\n- Found ${providerIds.size} providers.\n- Scanning ${vouchChannels.size} channel(s). This may take several minutes for a large history.` });
-
+    
     for (const channel of vouchChannels.values()) {
         let lastId;
         while (true) {
@@ -1486,19 +1518,16 @@ async function handleRecountVouches(interaction) {
             for (const message of messages.values()) {
                 processedMessages++;
                 const hasImage = message.attachments.some(a => a.contentType?.startsWith('image/'));
-                const mentionedUsers = message.mentions.users;
-
-                if (hasImage && mentionedUsers.size > 0) {
+                if (hasImage && message.mentions.users.size > 0) {
                     let providersInVouch = 0;
-                    for (const user of mentionedUsers.values()) {
-                        // --- OPTIMIZED CHECK ---
+                    message.mentions.users.forEach(user => {
                         if (providerIds.has(user.id)) {
                             const currentPoints = vouchPoints.get(user.id) || 0;
                             vouchPoints.set(user.id, currentPoints + POINTS_PER_VOUCH);
                             totalPointsAwarded += POINTS_PER_VOUCH;
                             providersInVouch++;
                         }
-                    }
+                    });
                     if (providersInVouch > 0) {
                         foundVouches++;
                     }
@@ -1509,6 +1538,7 @@ async function handleRecountVouches(interaction) {
     }
 
     await savePoints();
+    await interaction.editReply({ content: `**Phase 4/4:** ✅ Recount complete! Finalizing results...` });
 
     const summaryEmbed = new EmbedBuilder()
         .setColor(0x00FF00)
