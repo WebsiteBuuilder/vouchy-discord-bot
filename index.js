@@ -1,8 +1,14 @@
 const { Client, GatewayIntentBits, Events, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { setTimeout } = require('timers/promises');
+const { Storage } = require('./storage.js');
+const multiplayerRoulette = require('./multiplayer-roulette.js');
 require('dotenv').config();
 
 // NEW BULLETPROOF STORAGE SYSTEM
 const storage = require('./storage.js');
+
+// In-memory timer management for roulette - doesn't need to be persisted
+const rouletteTimers = new Map();
 
 // NEW STORAGE SYSTEM - All data managed by storage.js
 // Legacy variables removed - using storage directly now
@@ -75,11 +81,21 @@ function getPotentialPayout(betType, betAmount) {
   switch(betType.toLowerCase()) {
     case 'red':
     case 'black':
+    case 'even':
+    case 'odd':
+    case 'high':
+    case 'low':
       return `${betAmount * 2} points (2x)`;
+    case 'first-dozen':
+    case 'second-dozen':
+    case 'third-dozen':
+    case 'first-column':
+    case 'second-column':
+    case 'third-column':
+      return `${betAmount * 3} points (3x)`;
     case 'green':
-      return `${betAmount * 14} points (14x)`;
-    case 'number':
-      return `${betAmount * 35} points (35x)`;
+    case 'straight':
+      return `${betAmount * 36} points (36x)`;
     default:
       return `${betAmount * 2} points`;
   }
@@ -220,9 +236,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // --- HOTKEY EXECUTION ---
   if (storage.getHotkey(interaction.commandName)) {
     const message = storage.getHotkey(interaction.commandName);
-    // Allow for variables like {user} in the message
     const finalMessage = message.replace(/{user}/g, `<@${interaction.user.id}>`);
     return interaction.reply(finalMessage);
+  }
+
+  // --- NEW MULTIPLAYER ROULETTE ---
+  if (interaction.commandName === 'roulette-start') {
+    return handleRouletteStart(interaction);
+  }
+  if (interaction.commandName === 'bet') {
+    return handleBet(interaction);
   }
 
   if (interaction.commandName === 'vouch') {
@@ -329,6 +352,41 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   if (interaction.commandName === 'backup') {
+    if (!interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({
+        content: '❌ You need Administrator permissions to use this command!',
+        ephemeral: true,
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    console.log(`[ADMIN] ${interaction.user.username} initiated a manual backup.`);
+    const result = storage.backup();
+
+    if (result.success) {
+      await interaction.editReply(
+        `✅ **Backup completed successfully!**\n\n` +
+        `📊 **Statistics:**\n` +
+        `• **${result.userCount}** users backed up\n` +
+        `• **${result.totalPoints}** total points\n` +
+        `• Files saved to Railway persistent storage\n\n` +
+        `💾 **Backup files created:**\n` +
+        `• \`points-backup.json\` (main backup)\n` +
+        `• \`points-backup-[timestamp].json\` (timestamped backup)\n\n` +
+        `🔄 **To restore:** Use \`/restore-backup\` command`
+      );
+    } else {
+      await interaction.editReply(
+        `❌ **Backup failed!**\n\n` +
+        `**Error:** ${result.error}\n\n` +
+        `Please try again or contact an administrator.`
+      );
+    }
+    return;
+  }
+
+  if (interaction.commandName === 'reload-points') {
     // Check if user has administrator permissions
     if (!interaction.member.permissions.has('Administrator')) {
       return interaction.reply({ 
@@ -337,39 +395,101 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     }
 
-    try {
-      // Force backup creation
-      const stats = storage.createBackup();
-      const storageDetails = storage.getStats();
+    await interaction.deferReply({ ephemeral: true });
 
-      const embed = new EmbedBuilder()
-        .setColor(0x00FF00)
-        .setTitle('💾 Backup & Storage Info')
-        .setDescription('Manual backup completed successfully!')
-        .addFields(
-          { name: 'Environment', value: `✅ ${storageDetails.environment}`, inline: false },
-          { name: '👥 Total Users', value: `${storageDetails.userCount}`, inline: true },
-          { name: '💰 Total Points', value: `${storageDetails.totalPoints}`, inline: true },
-          { name: '📁 Storage Path', value: `\`${storageDetails.storageDir}\``, inline: false }
-        )
-        .setFooter({ text: `Backup requested by ${interaction.user.username}` })
-        .setTimestamp();
+    const result = storage.forceReloadFromBackup();
 
-      await interaction.reply({ embeds: [embed] });
-
-      console.log(`💾 Manual backup completed by ${interaction.user.username}`);
-
-    } catch (error) {
-      console.error('❌ Backup command error:', error);
-      
-      const errorEmbed = new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setTitle('❌ Backup Failed')
-        .setDescription(`Error during backup: ${error.message}`)
-        .setTimestamp();
-
-      await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+    if (result.success) {
+      await interaction.editReply(`✅ Points reloaded successfully. Found and loaded backup with ${result.userCount} users.`);
+    } else {
+      await interaction.editReply(`❌ Failed to reload points. Reason: ${result.error}`);
     }
+    return;
+  }
+
+  if (interaction.commandName === 'restore-backup') {
+    if (!interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({
+        content: '❌ You need Administrator permissions to use this command!',
+        ephemeral: true,
+      });
+    }
+
+    const filename = interaction.options.getString('filename');
+    await interaction.deferReply({ ephemeral: true });
+
+    console.log(`[ADMIN] ${interaction.user.username} initiated a manual restore from ${filename}.`);
+    const result = storage.restoreFrom(filename);
+
+    if (result.success) {
+      await interaction.editReply(
+        `✅ **Successfully restored points from \`${filename}\`!**\n\n` +
+        `📊 **Restored Data:**\n` +
+        `• **${result.userCount}** users loaded\n` +
+        `• **${result.totalPoints}** total points\n` +
+        `• Main points file updated\n` +
+        `• Backup file synchronized\n\n` +
+        `🔄 **The bot is now using this data.**`
+      );
+    } else {
+      await interaction.editReply(
+        `❌ **Failed to restore points from \`${filename}\`!**\n\n` +
+        `**Error:** ${result.error}\n\n` +
+        `Please check the filename or try a different backup.`
+      );
+    }
+    return;
+  }
+
+  if (interaction.commandName === 'open') {
+    return handleStoreOpen(interaction);
+  }
+
+  if (interaction.commandName === 'close') {
+    return handleStoreClose(interaction);
+  }
+
+  if (interaction.commandName === 'reload-points') {
+    return handleReloadPoints(interaction);
+  }
+
+  if (interaction.commandName === 'remove-user') {
+    // This command is no longer needed due to automatic cleanup
+    return interaction.reply({ content: 'This command is deprecated.', ephemeral: true });
+  }
+
+  if (interaction.commandName === 'restore-backup') {
+    if (!interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({
+        content: '❌ You need Administrator permissions to use this command!',
+        ephemeral: true,
+      });
+    }
+
+    const filename = interaction.options.getString('filename');
+    await interaction.deferReply({ ephemeral: true });
+
+    console.log(`[ADMIN] ${interaction.user.username} initiated a manual restore from ${filename}.`);
+    const result = storage.restoreFrom(filename);
+
+    if (result.success) {
+      await interaction.editReply(
+        `✅ **Successfully restored points from \`${filename}\`!**\n\n` +
+        `📊 **Restored Data:**\n` +
+        `• **${result.userCount}** users loaded\n` +
+        `• **${result.totalPoints}** total points\n` +
+        `• Main points file updated\n` +
+        `• Backup file synchronized\n\n` +
+        `🔄 **The bot is now using this data.**`
+      );
+    } else {
+      await interaction.editReply(
+        `❌ **Failed to restore points from \`${filename}\`!**\n\n` +
+        `**Error:** ${result.error}\n\n` +
+        `Please check the filename or try a different backup.`
+      );
+    }
+    return;
   }
 
   // Roulette slash command
@@ -386,29 +506,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setColor(0xFF0000)
         .setTitle('❌ Insufficient Points')
         .setDescription(`You need **${betAmount}** points to place this bet.\nYou currently have **${userPoints}** points.`)
-        .addFields({ name: 'How to get points?', value: 'Post images and tag providers in vouch channels!' })
         .setTimestamp();
       
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     
-    // Handle number bet
     let finalBetType = betType;
     if (betType === 'number') {
       if (numberBet === null || numberBet === undefined) {
-        const embed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('❌ Missing Number')
-          .setDescription('When betting on a specific number, you must specify which number (0-36)!')
-          .addFields({ name: 'Example', value: '/roulette 10 number 17' })
-          .setTimestamp();
-        
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({
+          content: '❌ You must specify a number between 0 and 36 when using the "number" bet type.',
+          ephemeral: true,
+        });
       }
       finalBetType = numberBet.toString();
     }
     
-    // Show bet confirmation
     const confirmEmbed = new EmbedBuilder()
       .setColor(0x0099FF)
       .setTitle('🎰 Roulette - Confirm Your Bet')
@@ -435,8 +548,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     
     const response = await interaction.reply({ embeds: [confirmEmbed], components: [row] });
     
-    // Store bet info for confirmation
-    const collector = response.createMessageComponentCollector({ time: 30000 });
+    const collector = response.createMessageComponentCollector({ time: 45000 });
     
     collector.on('collect', async i => {
       if (i.user.id !== userId) {
@@ -444,149 +556,246 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       
       if (i.customId === 'roulette_confirm') {
+        // Double check points before playing
+        const currentPoints = storage.getPoints(userId);
+        if (currentPoints < betAmount) {
+            return i.update({
+                embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Insufficient Points').setDescription(`Your points changed after you placed the bet. You only have ${currentPoints} points.`)],
+                components: []
+            });
+        }
         await playRouletteSlash(i, betAmount, finalBetType);
-      } else {
-        const cancelEmbed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('❌ Bet Cancelled')
-          .setDescription('Your roulette bet has been cancelled.')
-          .setTimestamp();
-        
-        await i.update({ embeds: [cancelEmbed], components: [] });
+      } else { // Cancel
+        await i.update({
+            embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Bet Cancelled').setDescription('Your roulette bet has been cancelled.')],
+            components: []
+        });
       }
     });
     
     collector.on('end', collected => {
       if (collected.size === 0) {
-        const timeoutEmbed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('⏰ Bet Expired')
-          .setDescription('Your roulette bet has expired.')
-          .setTimestamp();
-        
-        interaction.editReply({ embeds: [timeoutEmbed], components: [] });
+        interaction.editReply({
+            embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('⏰ Bet Expired').setDescription('Your roulette bet has expired.')],
+            components: []
+        });
       }
     });
+    return;
   }
 
-  // Blackjack slash command
   if (interaction.commandName === 'blackjack') {
     const betAmount = interaction.options.getInteger('amount');
     const userId = interaction.user.id;
     const userPoints = storage.getPoints(userId);
-    
+
     if (userPoints < betAmount) {
-      const embed = new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setTitle('❌ Insufficient Points')
-        .setDescription(`You need **${betAmount}** points to place this bet.\nYou currently have **${userPoints}** points.`)
-        .addFields({ name: 'How to get points?', value: 'Post images and tag providers in vouch channels!' })
-        .setTimestamp();
-      
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({
+        embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Insufficient Points').setDescription(`You need **${betAmount}** points to play. You have **${userPoints}**.`)],
+        ephemeral: true,
+      });
     }
-    
+
     if (storage.getGame(userId)) {
-      const embed = new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setTitle('❌ Game in Progress')
-        .setDescription('You already have a blackjack game in progress!\nFinish your current game first.')
-        .setTimestamp();
-      
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({
+        embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Game in Progress').setDescription('You already have a blackjack game running!')],
+        ephemeral: true,
+      });
     }
-    
-    // --- REMOVED CONFIRMATION STEP ---
-    // The game now starts immediately for reliability.
+
+    // Start the game immediately
     await playBlackjackSlash(interaction, betAmount);
+    return;
   }
 
-  // Send points slash command
-  if (interaction.commandName === 'send') {
-    const targetUser = interaction.options.getUser('user');
-    const amount = interaction.options.getInteger('amount');
-    const message = interaction.options.getString('message') || '';
-    
-    const senderId = interaction.user.id;
-    const senderPoints = storage.getPoints(senderId);
-    
-    // Check if trying to send to themselves
-    if (targetUser.id === senderId) {
-      return interaction.reply({ 
-        content: '❌ You cannot send points to yourself!', 
-        ephemeral: true 
+  // Multiplayer Roulette Commands
+  if (interaction.commandName === 'roulette-start') {
+    await multiplayerRoulette.startRoulette(interaction);
+    return;
+  }
+
+  if (interaction.commandName === 'roulette-bet') {
+    await multiplayerRoulette.placeBet(interaction);
+    return;
+  }
+
+  // 1v1 Challenge System
+  if (interaction.commandName === 'challenge') {
+    const opponent = interaction.options.getUser('opponent');
+    const gameType = interaction.options.getString('game');
+    const betAmount = interaction.options.getInteger('bet');
+    const challenger = interaction.user;
+
+    // Can't challenge yourself
+    if (opponent.id === challenger.id) {
+      return interaction.reply({
+        content: '❌ You cannot challenge yourself!',
+        ephemeral: true,
       });
     }
-    
-    // Check if target is a bot
-    if (targetUser.bot) {
-      return interaction.reply({ 
-        content: '❌ You cannot send points to bots!', 
-        ephemeral: true 
+
+    // Check if challenger has enough points
+    const challengerPoints = storage.getPoints(challenger.id);
+    if (challengerPoints < betAmount) {
+      return interaction.reply({
+        content: `❌ You don't have enough points! You have ${challengerPoints} points but need ${betAmount}.`,
+        ephemeral: true,
       });
     }
-    
-    // Check if sender has enough points
-    if (senderPoints < amount) {
-      return interaction.reply({ 
-        content: `❌ You don't have enough points! You have ${senderPoints} points but tried to send ${amount}.`, 
-        ephemeral: true 
+
+    // Check if opponent has enough points
+    const opponentPoints = storage.getPoints(opponent.id);
+    if (opponentPoints < betAmount) {
+      return interaction.reply({
+        content: `❌ ${opponent.username} doesn't have enough points! They have ${opponentPoints} points but need ${betAmount}.`,
+        ephemeral: true,
       });
     }
-    
-    // Transfer points
-    const receiverPoints = storage.getPoints(targetUser.id);
-    storage.setPoints(senderId, senderPoints - amount);
-    storage.setPoints(targetUser.id, receiverPoints + amount);
-    
+
+    // Create challenge
+    const challengeId = generateChallengeId();
+    const challenge = {
+      id: challengeId,
+      challenger: challenger.id,
+      opponent: opponent.id,
+      gameType: gameType,
+      betAmount: betAmount,
+      timestamp: Date.now(),
+      status: 'pending'
+    };
+
+    // Store challenge
+    if (!challenges.has(opponent.id)) {
+      challenges.set(opponent.id, new Map());
+    }
+    challenges.get(opponent.id).set(challengeId, challenge);
+
+    // Create challenge embed
     const embed = new EmbedBuilder()
-      .setColor(0x00FF00)
-      .setTitle('💸 Points Transferred!')
-      .setDescription(`<@${senderId}> sent **${amount}** points to <@${targetUser.id}>`)
+      .setColor(0x00ff00)
+      .setTitle('⚔️ **CHALLENGE ISSUED!** ⚔️')
+      .setDescription(`${challenger} has challenged ${opponent} to a duel!`)
       .addFields(
-        { name: 'Sender Balance', value: `${senderPoints - amount} points`, inline: true },
-        { name: 'Receiver Balance', value: `${receiverPoints + amount} points`, inline: true },
-        { name: 'Amount Sent', value: `${amount} points`, inline: true }
+        { name: '🎮 Game', value: getGameDisplayName(gameType), inline: true },
+        { name: '💰 Bet Amount', value: `${betAmount} points`, inline: true },
+        { name: '🆔 Challenge ID', value: `\`${challengeId}\``, inline: true }
       )
+      .setFooter({ text: `Use /accept ${challengeId} to accept or /decline ${challengeId} to decline` })
       .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+
+    // Auto-delete challenge after 5 minutes
+    setTimeout(() => {
+      const opponentChallenges = challenges.get(opponent.id);
+      if (opponentChallenges && opponentChallenges.has(challengeId)) {
+        opponentChallenges.delete(challengeId);
+        if (opponentChallenges.size === 0) {
+          challenges.delete(opponent.id);
+        }
+      }
+    }, 5 * 60 * 1000);
+
+    return;
+  }
+
+  if (interaction.commandName === 'accept') {
+    const challengeId = interaction.options.getString('challenge_id');
+    const accepter = interaction.user;
+
+    // Find the challenge
+    const opponentChallenges = challenges.get(accepter.id);
+    if (!opponentChallenges || !opponentChallenges.has(challengeId)) {
+      return interaction.reply({
+        content: '❌ Challenge not found or has expired!',
+        ephemeral: true,
+      });
+    }
+
+    const challenge = opponentChallenges.get(challengeId);
+    if (challenge.status !== 'pending') {
+      return interaction.reply({
+        content: '❌ This challenge has already been processed!',
+        ephemeral: true,
+      });
+    }
+
+    // Remove challenge from pending
+    opponentChallenges.delete(challengeId);
+    if (opponentChallenges.size === 0) {
+      challenges.delete(accepter.id);
+    }
+
+    // Start the game
+    await start1v1Game(interaction, challenge);
+    return;
+  }
+
+  if (interaction.commandName === 'decline') {
+    const challengeId = interaction.options.getString('challenge_id');
+    const decliner = interaction.user;
+
+    // Find the challenge
+    const opponentChallenges = challenges.get(decliner.id);
+    if (!opponentChallenges || !opponentChallenges.has(challengeId)) {
+      return interaction.reply({
+        content: '❌ Challenge not found or has expired!',
+        ephemeral: true,
+      });
+    }
+
+    const challenge = opponentChallenges.get(challengeId);
+    if (challenge.status !== 'pending') {
+      return interaction.reply({
+        content: '❌ This challenge has already been processed!',
+        ephemeral: true,
+      });
+    }
+
+    // Remove challenge
+    opponentChallenges.delete(challengeId);
+    if (opponentChallenges.size === 0) {
+      challenges.delete(decliner.id);
+    }
+
+    const challenger = await client.users.fetch(challenge.challenger);
     
-    if (message) {
-      embed.addFields({ name: 'Message', value: message, inline: false });
+    await interaction.reply({
+      content: `❌ ${decliner} has declined ${challenger}'s challenge!`,
+    });
+    return;
+  }
+
+  if (interaction.commandName === 'clear-points') {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({
+        content: '❌ You need Administrator permissions to use this command!',
+        ephemeral: true,
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const result = storage.clearAllPoints();
+    
+    if (result.success) {
+      await interaction.editReply(
+        `✅ **All points cleared successfully!**\n\n` +
+        `🗑️ **Action:** Cleared all user points\n` +
+        `👥 **Users affected:** ${result.clearedUsers}\n` +
+        `💰 **Points cleared:** ${result.clearedPoints}\n` +
+        `🔄 **Status:** Points system reset to zero\n\n` +
+        `⚠️ **Warning:** This action cannot be undone!`
+      );
+    } else {
+      await interaction.editReply(
+        `❌ **Failed to clear points!**\n\n` +
+        `**Error:** ${result.error}`
+      );
     }
     
-    await interaction.reply({ embeds: [embed] });
-    
-    console.log(`${interaction.user.username} sent ${amount} points to ${targetUser.username}`);
-  }
-
-  // --- HOTKEY MANAGEMENT ---
-  if (interaction.commandName === 'hotkey-create') {
-    return handleHotkeyCreate(interaction);
-  }
-
-  if (interaction.commandName === 'hotkey-delete') {
-    return handleHotkeyDelete(interaction);
-  }
-
-  if (interaction.commandName === 'hotkey-list') {
-    return handleHotkeyList(interaction);
-  }
-
-  if (interaction.commandName === 'recount-vouches') {
-    return await handleRecountVouches(interaction);
-  }
-
-  if (interaction.commandName === 'open') {
-    return handleStoreOpen(interaction);
-  }
-
-  if (interaction.commandName === 'close') {
-    return handleStoreClose(interaction);
-  }
-
-  if (interaction.commandName === 'remove-user') {
-    // This command is no longer needed due to automatic cleanup
-    return interaction.reply({ content: 'This command is deprecated.', ephemeral: true });
+    console.log(`[ADMIN] ${interaction.user.username} cleared all points.`);
+    return;
   }
 });
 
@@ -595,7 +804,7 @@ async function handleGamblingCommands(message) {
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift().toLowerCase();
   
-  if (!['roulette', 'blackjack', 'balance'].includes(command)) return;
+  if (!['blackjack', 'balance'].includes(command)) return; // Removed 'roulette'
   
   const userId = message.author.id;
   const userPoints = vouchPoints.get(userId) || 0;
@@ -620,308 +829,10 @@ async function handleGamblingCommands(message) {
     return message.reply(`❌ You don't have enough points! You have ${userPoints} points.`);
   }
   
-  if (command === 'roulette') {
-    await playRoulette(message, betAmount, args[1]);
-  } else if (command === 'blackjack') {
+  if (command === 'blackjack') {
     await playBlackjack(message, betAmount);
   }
 }
-
-async function playRoulette(message, betAmount, betType) {
-  const userId = message.author.id;
-  
-  if (!betType) {
-    return message.reply('❌ Please specify your bet! Usage: `!roulette <amount> <red/black/green/number>`');
-  }
-  
-  const spin = Math.floor(Math.random() * 37); // 0-36
-  const isRed = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].includes(spin);
-  const isBlack = spin !== 0 && !isRed;
-  const isGreen = spin === 0;
-  
-  let won = false;
-  let payout = 0;
-  let resultText = '';
-  
-  betType = betType.toLowerCase();
-  
-  if (betType === 'red' && isRed) {
-    won = true;
-    payout = betAmount * 2;
-    resultText = '🔴 RED wins!';
-  } else if (betType === 'black' && isBlack) {
-    won = true;
-    payout = betAmount * 2;
-    resultText = '⚫ BLACK wins!';
-  } else if (betType === 'green' && isGreen) {
-    won = true;
-    payout = betAmount * 14;
-    resultText = '🟢 GREEN wins!';
-  } else if (!isNaN(betType) && parseInt(betType) === spin) {
-    won = true;
-    payout = betAmount * 35;
-    resultText = `🎯 Number ${spin} wins!`;
-  } else {
-    resultText = `You lost! The ball landed on ${spin} (${isGreen ? 'Green' : isRed ? 'Red' : 'Black'})`;
-  }
-  
-  // Update points
-  const currentPoints = storage.getPoints(userId);
-  if (won) {
-    storage.setPoints(userId, currentPoints - betAmount + payout);
-  } else {
-    storage.setPoints(userId, currentPoints - betAmount);
-  }
-  
-  const embed = new EmbedBuilder()
-    .setColor(won ? 0x00FF00 : 0xFF0000)
-    .setTitle('🎰 Roulette Results')
-    .setDescription(`**Ball landed on: ${spin}**\n${resultText}`)
-    .addFields(
-      { name: 'Bet Amount', value: `${betAmount} points`, inline: true },
-      { name: 'Result', value: won ? `+${payout - betAmount} points` : `-${betAmount} points`, inline: true },
-      { name: 'New Balance', value: `${storage.getPoints(userId)} points`, inline: true }
-    )
-    .setFooter({ text: `${message.author.username}` })
-    .setTimestamp();
-  
-  message.reply({ embeds: [embed] });
-}
-
-// Slash command version of roulette
-// IMMERSIVE REALISTIC ROULETTE - Authentic casino experience with physics
-async function playRouletteSlash(interaction, betAmount, betType) {
-  const userId = interaction.user.id;
-  
-  const spin = Math.floor(Math.random() * 37); // 0-36
-  const isRed = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].includes(spin);
-  const isBlack = spin !== 0 && !isRed;
-  const isGreen = spin === 0;
-  
-  let won = false;
-  let payout = 0;
-  let resultText = '';
-  
-  betType = betType.toLowerCase();
-  
-  if (betType === 'red' && isRed) {
-    won = true;
-    payout = betAmount * 2;
-    resultText = '🔴 RED wins!';
-  } else if (betType === 'black' && isBlack) {
-    won = true;
-    payout = betAmount * 2;
-    resultText = '⚫ BLACK wins!';
-  } else if (betType === 'green' && isGreen) {
-    won = true;
-    payout = betAmount * 14;
-    resultText = '🟢 GREEN wins!';
-  } else if (!isNaN(betType) && parseInt(betType) === spin) {
-    won = true;
-    payout = betAmount * 35;
-    resultText = `🎯 Number ${spin} wins!`;
-  } else {
-    resultText = `You lost! The ball landed on ${spin} (${isGreen ? '🟢 Green' : isRed ? '🔴 Red' : '⚫ Black'})`;
-  }
-
-  // STAGE 1: Authentic Casino Setup
-  const setupEmbed = new EmbedBuilder()
-    .setColor(0x8B0000)
-    .setTitle('🎰 AUTHENTIC EUROPEAN ROULETTE 🎰')
-    .setDescription('```\n' +
-      '╔════════════════════════════════════════════════╗\n' +
-      '║  🎩 CROUPIER: "Place your bets, ladies and     ║\n' +
-      '║               gentlemen!"                      ║\n' +
-      '║                                                ║\n' +
-      '║     🎯 Professional Casino Grade Wheel         ║\n' +
-      '║     ⚡ Precision Swiss Bearings                ║\n' +
-      '║     🏆 Authentic European Layout               ║\n' +
-      '╚════════════════════════════════════════════════╝\n' +
-      '```\n' +
-      '🥂 *The croupier spins the wheel counter-clockwise...*')
-    .addFields(
-      { name: '🎲 Your Bet', value: `**${betAmount}** points on **${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}**`, inline: true },
-      { name: '🎯 Odds', value: betType === 'number' ? '35:1' : betType === 'green' ? '14:1' : '2:1', inline: true },
-      { name: '🍀 Status', value: 'Bet Locked In', inline: true }
-    )
-    .setTimestamp();
-
-  await interaction.update({ embeds: [setupEmbed], components: [] });
-  await new Promise(resolve => setTimeout(resolve, 1500));
-
-  // STAGE 2: Realistic Wheel Physics Simulation
-  const wheelPhases = [
-    {
-      title: '🌪️ WHEEL ACCELERATION',
-      wheel: '```\n' +
-        '    ╭─────────────────────────────────────╮\n' +
-        '  ╱ 26 🟢 0 🔴 32 ⚫ 15 🔴 19 ⚫ 4 🔴 21 ╲\n' +
-        ' │ ⚫ 2 🔴 25 ⚫ 17 🔴 34 ⚫ 6 🔴 27     │\n' +
-        ' │   ⚫ 13 🔴 36 ⚫ 11 🔴 30 ⚫ 8       │\n' +
-        ' │     🔴 23 ⚫ 10 🔴 5 ⚫ 24 🔴 16     │\n' +
-        ' │       ⚫ 33 🔴 1 ⚫ 20 🔴 14 ⚫     │\n' +
-        ' │         🔴 31 ⚫ 9 🔴 22 ⚫ 18       │\n' +
-        '  ╲ 🔴 29 ⚫ 7 🔴 28 ⚫ 12 🔴 35 ⚫ 3  ╱\n' +
-        '    ╰─────────────────────────────────────╯\n' +
-        '           🎱 Ball starting to move...\n' +
-        '```',
-      speed: '⚡ Accelerating... (15 RPM)',
-      sound: '*whirr... click click click...*'
-    },
-    {
-      title: '🚀 PEAK VELOCITY',
-      wheel: '```\n' +
-        '    ╭─────────────────────────────────────╮\n' +
-        '  ╱ 🔴 ⚫ 🟢 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ╲\n' +
-        ' │ [SPINNING TOO FAST TO READ NUMBERS] │\n' +
-        ' │ ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴   │\n' +
-        ' │   🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴     │\n' +
-        ' │     ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴     │\n' +
-        ' │       🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴       │\n' +
-        '  ╲ ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴 ⚫ 🔴  ╱\n' +
-        '    ╰─────────────────────────────────────╯\n' +
-        '              🎱 Ball flying fast!\n' +
-        '```',
-      speed: '🚀 Maximum Speed (45 RPM)',
-      sound: '*WHIRRRRRRR... rapid clicking...*'
-    },
-    {
-      title: '⏳ DECELERATION PHASE',
-      wheel: '```\n' +
-        '    ╭─────────────────────────────────────╮\n' +
-        '  ╱ 26 🟢 0 🔴 32 ⚫ 15 🔴 19 ⚫ 4 🔴 21 ╲\n' +
-        ' │ ⚫ 2 🔴 25 ⚫ 17 🔴 34 ⚫ 6 🔴 27     │\n' +
-        ' │   ⚫ 13 🔴 36 ⚫ 11 🔴 30 ⚫ 8       │\n' +
-        ' │     🔴 23 ⚫ 10 🔴 5 ⚫ 24 🔴 16     │\n' +
-        ' │       ⚫ 33 🔴 1 ⚫ 20 🔴 14 ⚫     │\n' +
-        ' │         🔴 31 ⚫ 9 🔴 22 ⚫ 18       │\n' +
-        '  ╲ 🔴 29 ⚫ 7 🔴 28 ⚫ 12 🔴 35 ⚫ 3  ╱\n' +
-        '    ╰─────────────────────────────────────╯\n' +
-        '        🎱 Ball losing momentum...\n' +
-        '```',
-      speed: '⏳ Slowing Down... (8 RPM)',
-      sound: '*click... click... click...*'
-    }
-  ];
-
-  // Animate realistic wheel physics
-  for (let i = 0; i < wheelPhases.length; i++) {
-    const phase = wheelPhases[i];
-    const physicsEmbed = new EmbedBuilder()
-      .setColor(0xFF4500)
-      .setTitle(phase.title)
-      .setDescription(phase.wheel)
-      .addFields(
-        { name: '🎲 Your Bet', value: `${betAmount} points on **${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}**`, inline: true },
-        { name: '⚡ Wheel Speed', value: phase.speed, inline: true },
-        { name: '🔊 Casino Sounds', value: phase.sound, inline: true }
-      )
-      .setFooter({ text: `🎰 Physics Simulation • Ball trajectory calculated in real-time` })
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [physicsEmbed] });
-    await new Promise(resolve => setTimeout(resolve, 900));
-  }
-
-  // STAGE 3: Final Moments - Ball Settling
-  const numberColor = isGreen ? '🟢' : isRed ? '🔴' : '⚫';
-  const finalMomentsEmbed = new EmbedBuilder()
-    .setColor(0xFFD700)
-    .setTitle('🎯 FINAL MOMENTS')
-    .setDescription('```\n' +
-      '    ╭─────────────────────────────────────╮\n' +
-      '  ╱ 26 🟢 0 🔴 32 ⚫ 15 🔴 19 ⚫ 4 🔴 21 ╲\n' +
-      ' │ ⚫ 2 🔴 25 ⚫ 17 🔴 34 ⚫ 6 🔴 27     │\n' +
-      ' │   ⚫ 13 🔴 36 ⚫ 11 🔴 30 ⚫ 8       │\n' +
-      ' │     🔴 23 ⚫ 10 🔴 5 ⚫ 24 🔴 16     │\n' +
-      ' │       ⚫ 33 🔴 1 ⚫ 20 🔴 14 ⚫     │\n' +
-      ' │         🔴 31 ⚫ 9 🔴 22 ⚫ 18       │\n' +
-      '  ╲ 🔴 29 ⚫ 7 🔴 28 ⚫ 12 🔴 35 ⚫ 3  ╱\n' +
-      '    ╰─────────────────────────────────────╯\n' +
-      '           🎱 Ball bouncing... settling...\n' +
-      '```\n' +
-      '🔥 **The wheel is almost stopped... ball bouncing between pockets...**')
-    .addFields(
-      { name: '⚡ Wheel Speed', value: '⏳ Nearly stopped (1 RPM)', inline: true },
-      { name: '🎱 Ball Status', value: 'Bouncing between pockets', inline: true },
-      { name: '💭 Tension', value: '████████████ MAXIMUM', inline: true }
-    )
-    .setTimestamp();
-
-  await interaction.editReply({ embeds: [finalMomentsEmbed] });
-  await new Promise(resolve => setTimeout(resolve, 1300));
-
-  // STAGE 4: Dramatic Result with Authentic Layout
-  const realRouletteWheel = `
-    ╭─────────────────────────────────────╮
-  ╱ 26 🟢 0 🔴 32 ⚫ 15 🔴 19 ⚫ 4 🔴 21 ╲
- │ ⚫ 2 🔴 25 ⚫ 17 🔴 34 ⚫ 6 🔴 27     │
- │   ⚫ 13 🔴 36 ⚫ 11 🔴 30 ⚫ 8       │
- │     🔴 23 ⚫ 10 🔴 5 ⚫ 24 🔴 16     │
- │       ⚫ 33 🔴 1 ⚫ 20 🔴 14 ⚫     │
- │         🔴 31 ⚫ 9 🔴 22 ⚫ 18       │
-  ╲ 🔴 29 ⚫ 7 🔴 28 ⚫ 12 🔴 35 ⚫ 3  ╱
-    ╰─────────────────────────────────────╯
-            🎱 LANDED ON: ${numberColor} ${spin}`;
-
-  const winnerAnnouncement = won 
-    ? `🎊 **"${spin} ${numberColor} WINS!"** 🎊\n\n🏆 **CONGRATULATIONS!** 🏆\n${resultText}`
-    : `💔 **"${spin} ${numberColor}"** 💔\n\n😤 **HOUSE WINS THIS TIME** \n${resultText}`;
-
-  // Update points
-  const currentPoints = storage.getPoints(userId);
-  if (won) {
-    storage.setPoints(userId, currentPoints - betAmount + payout);
-  } else {
-    storage.setPoints(userId, currentPoints - betAmount);
-  }
-
-  const resultEmbed = new EmbedBuilder()
-    .setColor(won ? 0x00FF00 : 0xFF0000)
-    .setTitle('🎰 RESULT ANNOUNCEMENT 🎰')
-    .setDescription('```' + realRouletteWheel + '```\n\n' + winnerAnnouncement)
-    .addFields(
-      { name: '🎲 Your Bet', value: `${betAmount} points on **${betType === 'number' ? `Number ${parseInt(betType)}` : betType.toUpperCase()}**`, inline: false },
-      { name: '🎯 Winning Number', value: `**${numberColor} ${spin}**`, inline: true },
-      { name: '💰 Result', value: won ? `**+${payout - betAmount}** points` : `**-${betAmount}** points`, inline: true },
-      { name: '💳 Balance', value: `**${storage.getPoints(userId)}** points`, inline: true }
-    )
-    .setFooter({ 
-      text: won 
-        ? `🎊 ${interaction.user.username} • The house congratulates you!`
-        : `🎰 ${interaction.user.username} • Thank you for playing authentic roulette!` 
-    })
-    .setTimestamp();
-
-  await interaction.editReply({ embeds: [resultEmbed] });
-
-  // BONUS: Winner celebration (only for big wins)
-  if (won && (payout - betAmount) >= 50) {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const bigWinEmbed = new EmbedBuilder()
-      .setColor(0xFFD700)
-      .setTitle('🎊 BIG WINNER! 🎊')
-      .setDescription('```\n' +
-        '╔════════════════════════════════════════════════╗\n' +
-        '║                                                ║\n' +
-        '║      🍾 CHAMPAGNE SERVICE! 🍾                  ║\n' +
-        '║                                                ║\n' +
-        '║    🎺 The house band plays a victory march!    ║\n' +
-        '║                                                ║\n' +
-        '║      🏆 You are a true high roller! 🏆        ║\n' +
-        '╚════════════════════════════════════════════════╝\n' +
-        '```\n' +
-        `🥂 **Your ${payout - betAmount} point win is spectacular!**`)
-      .setTimestamp();
-
-    await interaction.followUp({ embeds: [bigWinEmbed] });
-  }
-}
-
-// Blackjack game storage
-// This is now loaded from a file at the top level
-// const blackjackGames = new Map();
 
 async function playBlackjack(message, betAmount) {
   const userId = message.author.id;
@@ -1198,59 +1109,28 @@ function createBlackjackButtons(userId, canDoubleDown = true) {
 
 // BULLETPROOF blackjack slash command
 async function playBlackjackSlash(interaction, betAmount) {
-  const userId = interaction.user.id;
-  
-  try {
-    // Clean up any existing game
-    if (storage.getGame(userId)) {
-      storage.deleteGame(userId);
-    }
-    
-    // Create fresh deck and deal cards
-    const deck = createDeck();
-    const playerHand = [drawCard(deck), drawCard(deck)];
-    const dealerHand = [drawCard(deck), drawCard(deck)];
-    
-    const game = {
-      deck,
-      playerHand,
-      dealerHand,
-      betAmount,
-      userId,
-      isDoubleDown: false,
-      timestamp: Date.now()
-    };
-    
-    storage.setGame(userId, game);
-    
-    const playerValue = getHandValue(playerHand);
-    
-    // Check for blackjack (21 with first two cards)
+    const userId = interaction.user.id;
+
+    const game = storage.createGame(userId, betAmount);
+    const playerValue = storage.getHandValue(game.playerHand);
+
     if (playerValue === 21) {
-      return await endGame(interaction, game, true, '🎉 BLACKJACK! Perfect 21 with your first two cards!');
+        // Natural Blackjack
+        return handleBlackjackEnd(interaction, game, { playerWon: true, reason: 'Blackjack! 🎉' });
     }
-    
-    const embed = createBlackjackEmbed(game, false);
-    const buttons = createBlackjackButtons(userId, true);
-    
-    // Use the new safeReply function for the initial game message.
-    await safeReply(interaction, { embeds: [embed], components: [buttons] });
-    
-    // Auto-cleanup after 10 minutes
-    setTimeout(async () => {
-      const currentGame = storage.getGame(userId);
-      // Only delete if the game is still the same one, preventing race conditions
-      if (currentGame && currentGame.timestamp === game.timestamp) {
-        storage.deleteGame(userId);
-        console.log(`⏰ Timed out and removed blackjack game for user ${userId}`);
-      }
-    }, 600000);
-    
-  } catch (error) {
-    console.error('Blackjack start error:', error);
-    const errorEmbed = createErrorEmbed('🔧 Game Start Error', 'Failed to start blackjack. Please try again.');
-    await safeReply(interaction, { embeds: [errorEmbed], components: [] });
-  }
+
+    const embed = storage.createBlackjackEmbed(game, false, "Place your bet!");
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('blackjack_hit').setLabel('Hit').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('blackjack_stand').setLabel('Stand').setStyle(ButtonStyle.Secondary)
+    );
+
+    // If it's a new interaction, reply. If it's from a button, update.
+    if (interaction.replied || interaction.deferred) {
+        await interaction.editReply({ embeds: [embed], components: [row] });
+    } else {
+        await interaction.reply({ embeds: [embed], components: [row] });
+    }
 }
 
 // Legacy reaction handler removed - now using modern button system
@@ -1324,62 +1204,52 @@ function createBlackjackEmbed(game, showDealerCards) {
     .setTimestamp();
 }
 
-async function handleBlackjackEnd(message, playerWon, reason) {
-  const game = blackjackGames.get(message.mentions?.users?.first()?.id || message.author.id);
-  if (!game) return;
-  
-  // Play out dealer's hand if needed
-  if (playerWon === null) {
-    while (getHandValue(game.dealerHand) < 17) {
-      game.dealerHand.push(drawCard(game.deck));
+async function handleBlackjackEnd(interaction, game, result) {
+    let { playerWon, reason } = result;
+
+    // Play out dealer's hand if not an instant win/loss
+    if (playerWon === null) {
+        while (storage.getHandValue(game.dealerHand) < 17) {
+            game.dealerHand.push(storage.drawCard(game.deck));
+        }
+        const playerValue = storage.getHandValue(game.playerHand);
+        const dealerValue = storage.getHandValue(game.dealerHand);
+
+        if (dealerValue > 21) {
+            playerWon = true;
+            reason = 'Dealer busted!';
+        } else if (dealerValue > playerValue) {
+            playerWon = false;
+            reason = 'Dealer wins!';
+        } else if (playerValue > dealerValue) {
+            playerWon = true;
+            reason = 'You win!';
+        } else {
+            playerWon = 'push'; // Tie
+            reason = 'Push (tie)! Your bet is returned.';
+        }
     }
+
+    // Update points
+    const finalPoints = storage.endGame(game.userId, playerWon);
+    storage.deleteGame(game.userId);
+
+    const embed = storage.createBlackjackEmbed(game, true, reason, playerWon);
     
-    const playerValue = getHandValue(game.playerHand);
-    const dealerValue = getHandValue(game.dealerHand);
-    
-    if (dealerValue > 21) {
-      playerWon = true;
-      reason = 'Dealer busted!';
-    } else if (dealerValue > playerValue) {
-      playerWon = false;
-      reason = 'Dealer wins!';
-    } else if (playerValue > dealerValue) {
-      playerWon = true;
-      reason = 'You win!';
+    // Check if interaction can be updated
+    if (interaction.isMessageComponent()) {
+        await interaction.update({ embeds: [embed], components: [] });
     } else {
-      playerWon = null;
-      reason = 'Push (tie)!';
+        await interaction.editReply({ embeds: [embed], components: [] });
     }
-  }
-  
-  // Update points
-  const currentPoints = storage.getPoints(game.userId);
-  let newPoints = currentPoints;
-  
-  if (playerWon === true) {
-    newPoints = currentPoints + game.betAmount;
-  } else if (playerWon === false) {
-    newPoints = currentPoints - game.betAmount;
-  }
-  // If tie (playerWon === null), points stay the same
-  
-  storage.setPoints(game.userId, newPoints);
-  storage.deleteGame(game.userId);
-  
-  const embed = new EmbedBuilder()
-    .setColor(playerWon === true ? 0x00FF00 : playerWon === false ? 0xFF0000 : 0xFFFF00)
-    .setTitle('🃏 Blackjack - Game Over')
-    .setDescription(reason)
-    .addFields(
-      { name: `Your Hand (${getHandValue(game.playerHand)})`, value: game.playerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
-      { name: `Dealer Hand (${getHandValue(game.dealerHand)})`, value: game.dealerHand.map(card => `${card.rank}${card.suit}`).join(' '), inline: false },
-      { name: 'Result', value: playerWon === true ? `+${game.betAmount} points` : playerWon === false ? `-${game.betAmount} points` : 'No change', inline: true },
-      { name: 'New Balance', value: `${newPoints} points`, inline: true }
-    )
-    .setTimestamp();
-  
-  await message.edit({ embeds: [embed] });
-  message.reactions.removeAll();
+
+    // Send a new, public message summarizing the result
+    const summaryEmbed = new EmbedBuilder()
+        .setColor(won ? 0x00FF00 : 0xFF0000)
+        .setDescription(won ? `**${interaction.user.username}** won **${payout - betAmount}** points!` : `**${interaction.user.username}** lost **${betAmount}** points.`)
+        .setFooter({ text: `New balance: ${finalPoints} points` });
+
+    await interaction.followUp({ embeds: [summaryEmbed] });
 }
 
 // --- VOUCH RECOUNT COMMAND ---
@@ -1699,6 +1569,935 @@ async function handleHotkeyList(interaction) {
     embed.setDescription(description);
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+// =================================================================================
+// MULTIPLAYER ROULETTE SYSTEM
+// =================================================================================
+
+async function handleRouletteStart(interaction) {
+    const channelId = interaction.channelId;
+
+    if (storage.getRouletteTable(channelId)) {
+        return interaction.reply({ content: '❌ A roulette game is already in progress in this channel!', ephemeral: true });
+    }
+
+    const bettingDuration = 45; // seconds
+    const endTime = Date.now() + bettingDuration * 1000;
+
+    const table = {
+        channelId: channelId,
+        endTime: endTime,
+        bets: [],
+        messageId: null
+    };
+
+    const embed = new EmbedBuilder()
+        .setColor(0x00FF00)
+        .setTitle('🎰 New Roulette Table Open!')
+        .setDescription(`**Bets are open for ${bettingDuration} seconds!**\n\nUse \`/bet <type> <amount>\` to place your bets.\n\nThe wheel will spin <t:${Math.floor(endTime / 1000)}:R>.`)
+        .addFields({ name: 'Current Bets', value: 'No bets placed yet.' })
+        .setFooter({ text: 'Good luck to all players!' });
+
+    const response = await interaction.reply({ embeds: [embed], fetchReply: true });
+    table.messageId = response.id;
+
+    storage.setRouletteTable(channelId, table);
+    console.log(`Roulette table started in channel #${interaction.channel.name}`);
+
+    const timer = setTimeout(bettingDuration * 1000)
+        .then(() => spinMultiplayerWheel(interaction.client, channelId))
+        .catch(err => console.error("Roulette timer error:", err));
+        
+    rouletteTimers.set(channelId, timer);
+}
+
+async function handleBet(interaction) {
+    const channelId = interaction.channelId;
+    const table = storage.getRouletteTable(channelId);
+
+    if (!table) {
+        return interaction.reply({ content: '❌ There is no active roulette game in this channel. Start one with `/roulette-start`.', ephemeral: true });
+    }
+    
+    if (Date.now() > table.endTime) {
+        return interaction.reply({ content: '❌ Betting has already closed for this round!', ephemeral: true });
+    }
+
+    const betType = interaction.options.getString('bet-type');
+    const amount = interaction.options.getInteger('amount');
+    const numberBet = interaction.options.getInteger('number');
+    const userId = interaction.user.id;
+
+    const userPoints = storage.getPoints(userId);
+    
+    if (userPoints < amount) {
+        return interaction.reply({ content: `❌ Insufficient points! You have ${userPoints}, but tried to bet ${amount}.`, ephemeral: true });
+    }
+
+    if (betType === 'straight' && (numberBet === null || numberBet === undefined)) {
+        return interaction.reply({ content: '❌ You must specify a number when placing a "Straight Number" bet.', ephemeral: true });
+    }
+
+    const bet = {
+        userId,
+        username: interaction.user.username,
+        betType: betType === 'straight' ? `s${numberBet}` : betType,
+        amount,
+    };
+
+    table.bets.push(bet);
+    storage.removePoints(userId, amount);
+    storage.setRouletteTable(channelId, table);
+
+    try {
+        const mainMessage = await interaction.channel.messages.fetch(table.messageId);
+        if (mainMessage) {
+            const currentEmbed = mainMessage.embeds[0];
+            const newEmbed = new EmbedBuilder(currentEmbed);
+            const betsList = table.bets.map(b => `> **${b.username}** bet **${b.amount}** on **${getBetDescription(b.betType)}**`).join('\n');
+            newEmbed.setFields({ name: `Current Bets (${table.bets.length})`, value: betsList.substring(0, 1020) });
+            await mainMessage.edit({ embeds: [newEmbed] });
+        }
+    } catch(e) { console.error("Could not edit roulette message", e)}
+
+    await interaction.reply({ content: `✅ Your bet of **${amount}** points on **${getBetDescription(bet.betType)}** has been placed! Your new balance is ${storage.getPoints(userId)}.`, ephemeral: true });
+}
+
+function getBetDescription(betType) {
+    if (betType.startsWith('s')) return `🎯 Straight Number ${betType.substring(1)}`;
+    const descriptions = {
+        'red': '🔴 Red', 'black': '⚫ Black', 'green': '🟢 Green/Zero',
+        'even': '🔢 Even', 'odd': '🔢 Odd', 'high': '📈 High (19-36)', 'low': '📉 Low (1-18)',
+        'first-dozen': '📊 1st Dozen', 'second-dozen': '📊 2nd Dozen', 'third-dozen': '📊 3rd Dozen',
+        'first-column': '📋 1st Column', 'second-column': '📋 2nd Column', 'third-column': '📋 3rd Column'
+    };
+    return descriptions[betType] || 'Unknown Bet';
+}
+
+async function spinMultiplayerWheel(client, channelId) {
+    const table = storage.getRouletteTable(channelId);
+    if (!table) return;
+
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (!channel) return;
+    
+    const message = await channel.messages.fetch(table.messageId).catch(() => null);
+    if (!message) {
+        storage.deleteRouletteTable(channelId);
+        rouletteTimers.delete(channelId);
+        return;
+    }
+
+    const closingEmbed = new EmbedBuilder(message.embeds[0])
+        .setTitle('🎰 Betting Closed!')
+        .setDescription('**No more bets!** The wheel is about to spin...');
+    await message.edit({ embeds: [closingEmbed] });
+    await setTimeout(3000);
+
+    const spin = Math.floor(Math.random() * 37);
+    const redNumbers = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
+    const isRed = redNumbers.includes(spin);
+    const isBlack = spin !== 0 && !isRed;
+    const isGreen = spin === 0;
+    const numberColor = isGreen ? '🟢' : isRed ? '🔴' : '⚫';
+
+    const spinResultEmbed = new EmbedBuilder(message.embeds[0])
+      .setColor(0xFF4500)
+      .setTitle('🌪️ WHEEL IS SPINNING...')
+      .setDescription(`The wheel slows... click... click... The ball lands on... **${numberColor} ${spin}**!`);
+    await message.edit({ embeds: [spinResultEmbed] });
+    await setTimeout(3000);
+    
+    const results = [];
+    let totalWon = 0;
+    let totalLost = 0;
+
+    for (const bet of table.bets) {
+        const checkWin = (spinResult, type) => {
+             if (type.startsWith('s')) {
+                return { win: spinResult === parseInt(type.substring(1), 10), payout: 36 };
+            }
+            switch (type) {
+                case 'red': return { win: isRed, payout: 2 };
+                case 'black': return { win: isBlack, payout: 2 };
+                case 'green': return { win: isGreen, payout: 36 };
+                case 'even': return { win: spin !== 0 && spin % 2 === 0, payout: 2 };
+                case 'odd': return { win: spin !== 0 && spin % 2 === 1, payout: 2 };
+                case 'high': return { win: spin >= 19 && spin <= 36, payout: 2 };
+                case 'low': return { win: spin >= 1 && spin <= 18, payout: 2 };
+                case 'first-dozen': return { win: spin >= 1 && spin <= 12, payout: 3 };
+                case 'second-dozen': return { win: spin >= 13 && spin <= 24, payout: 3 };
+                case 'third-dozen': return { win: spin >= 25 && spin <= 36, payout: 3 };
+                case 'first-column': return { win: spin !== 0 && (spin - 1) % 3 === 0, payout: 3 };
+                case 'second-column': return { win: spin !== 0 && (spin - 2) % 3 === 0, payout: 3 };
+                case 'third-column': return { win: spin !== 0 && spin % 3 === 0, payout: 3 };
+                default: return { win: false, payout: 0 };
+            }
+        };
+
+        const result = checkWin(spin, bet.betType);
+        if (result.win) {
+            const winnings = bet.amount * result.payout;
+            storage.addPoints(bet.userId, winnings);
+            results.push(`> ✅ **${bet.username}** won **${winnings}** points!`);
+            totalWon += winnings;
+        } else {
+            results.push(`> ❌ **${bet.username}** lost **${bet.amount}** points.`);
+            totalLost += bet.amount;
+        }
+    }
+
+    const finalEmbed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`🎰 Wheel Landed on ${numberColor} ${spin}!`)
+        .setDescription(results.length > 0 ? results.join('\n').substring(0, 4000) : 'No bets were placed.')
+        .addFields(
+            { name: '💰 Total Won', value: totalWon.toString(), inline: true },
+            { name: '💔 Total Lost', value: totalLost.toString(), inline: true }
+        )
+        .setFooter({ text: 'Thanks for playing! A new round can be started with /roulette-start.'});
+
+    await message.edit({ embeds: [finalEmbed] });
+
+    storage.deleteRouletteTable(channelId);
+    rouletteTimers.delete(channelId);
+    console.log(`Roulette game finished in channel ${channelId}.`);
+}
+
+async function handleReloadPoints(interaction) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You do not have permission to use this command.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const result = storage.forceReloadFromBackup();
+
+    if (result.success) {
+        const embed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('✅ Points Reloaded Successfully')
+            .setDescription(`Successfully loaded **${result.count}** user point entries from the backup file: \`${result.file}\`.`)
+            .setFooter({ text: 'The bot is now using the restored data.' })
+            .setTimestamp();
+        await interaction.editReply({ embeds: [embed] });
+    } else {
+        const embed = new EmbedBuilder()
+            .setColor(0xFF0000)
+            .setTitle('❌ Failed to Reload Points')
+            .setDescription(`An error occurred: ${result.error}`)
+            .setFooter({ text: 'No changes have been made to the current points data.' })
+            .setTimestamp();
+        await interaction.editReply({ embeds: [embed] });
+    }
+}
+
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+// Multiplayer Roulette System
+const activeRouletteGames = new Map();
+
+// Roulette wheel layout (European style)
+const ROULETTE_NUMBERS = [
+    0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
+];
+
+const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
+const BLACK_NUMBERS = new Set([2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]);
+
+function getNumberColor(number) {
+    if (number === 0) return '🟢';
+    if (RED_NUMBERS.has(number)) return '🔴';
+    return '⚫';
+}
+
+function getBetPayout(betType, betAmount) {
+    switch(betType) {
+        case 'red':
+        case 'black':
+        case 'even':
+        case 'odd':
+        case 'high':
+        case 'low':
+        case 'first-dozen':
+        case 'second-dozen':
+        case 'third-dozen':
+        case 'first-column':
+        case 'second-column':
+        case 'third-column':
+            return betAmount * 2;
+        case 'green':
+            return betAmount * 14;
+        case 'straight':
+            return betAmount * 35;
+        default:
+            return betAmount * 2;
+    }
+}
+
+// Roulette wheel constants
+const ROULETTE_WHEEL = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+const RED_NUMBERS_OLD = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
+const numberToColor = (n) => {
+    if (n === 0) return '🟢';
+    if (RED_NUMBERS_OLD.has(n)) return '🔴';
+    return '⚫';
+};
+
+/**
+ * Creates a visual representation of the roulette wheel spinning.
+ * @param {import('discord.js').Interaction} interaction The interaction to edit.
+ * @param {number} winningNumber The final number the wheel will land on.
+ */
+async function animateRoulette(interaction, winningNumber) {
+    const getWheelSlice = (centerIndex) => {
+        let parts = [];
+        for (let i = -3; i <= 3; i++) {
+            const wheelIndex = (centerIndex + i + ROULETTE_WHEEL.length) % ROULETTE_WHEEL.length;
+            const number = ROULETTE_WHEEL[wheelIndex];
+            parts.push(`${numberToColor(number)} ${number}`);
+        }
+        return `\`${parts.slice(0,3).join(' ')}\` ➡️ **${parts[3]}** ⬅️ \`${parts.slice(4).join(' ')}\``;
+    };
+
+    const totalSpins = 30; // Total animation frames
+    const winningIndex = ROULETTE_WHEEL.indexOf(winningNumber);
+    let currentIndex = 0;
+
+    // Animate the wheel spinning
+    for (let i = 0; i < totalSpins; i++) {
+        currentIndex = (currentIndex + 1) % ROULETTE_WHEEL.length;
+        const embed = new EmbedBuilder()
+            .setColor(0x0099FF)
+            .setTitle('🎰 Roulette')
+            .setDescription(`**No more bets!** The wheel is spinning...\n\n${getWheelSlice(currentIndex)}`);
+        
+        if(i === 0) {
+            await interaction.update({ embeds: [embed], components: [] });
+        } else {
+            await interaction.editReply({ embeds: [embed] });
+        }
+
+        // Slow down effect
+        const progress = i / totalSpins;
+        if (progress < 0.5) await sleep(100);
+        else if (progress < 0.8) await sleep(200);
+        else await sleep(400);
+    }
+
+    // Land on the winning number
+    while (currentIndex !== winningIndex) {
+        currentIndex = (currentIndex + 1) % ROULETTE_WHEEL.length;
+        const embed = new EmbedBuilder()
+            .setColor(0x0099FF)
+            .setTitle('🎰 Roulette')
+            .setDescription(`Slowing down...\n\n${getWheelSlice(currentIndex)}`);
+        await interaction.editReply({ embeds: [embed] });
+        await sleep(600);
+    }
+
+    // Show the final landing spot
+    const finalEmbed = new EmbedBuilder()
+        .setColor(numberToColor(winningNumber) === '🟢' ? 0x00FF00 : numberToColor(winningNumber) === '🔴' ? 0xFF0000 : 0x808080)
+        .setTitle('🎰 Roulette')
+        .setDescription(`The ball landed on... **${numberToColor(winningNumber)} ${winningNumber}**!`);
+    await interaction.editReply({ embeds: [finalEmbed] });
+    await sleep(2000);
+}
+
+// Slash command version of roulette
+async function playRouletteSlash(interaction, betAmount, betType) {
+  const userId = interaction.user.id;
+  
+  // Pre-determine the winning number
+  const spin = ROULETTE_WHEEL[Math.floor(Math.random() * ROULETTE_WHEEL.length)];
+  
+  // Animate the wheel and wait for it to finish
+  await animateRoulette(interaction, spin);
+
+  const isRed = RED_NUMBERS.has(spin);
+  const isBlack = spin !== 0 && !isRed;
+  const isGreen = spin === 0;
+  
+  let won = false;
+  let payout = 0;
+  let resultText = '';
+  
+  betType = betType.toLowerCase();
+  
+  const numericBetType = parseInt(betType);
+
+  if (betType === 'red' && isRed) {
+    won = true;
+    payout = betAmount * 2;
+    resultText = 'You won on **RED**!';
+  } else if (betType === 'black' && isBlack) {
+    won = true;
+    payout = betAmount * 2;
+    resultText = 'You won on **BLACK**!';
+  } else if (betType === 'green' && isGreen) {
+    won = true;
+    payout = betAmount * 14;
+    resultText = 'You won on **GREEN**!';
+  } else if (!isNaN(numericBetType) && numericBetType === spin) {
+    won = true;
+    payout = betAmount * 35;
+    resultText = `You hit the **NUMBER**!`;
+  } else {
+    resultText = `You lost. Better luck next time!`;
+  }
+  
+  const currentPoints = storage.getPoints(userId);
+  let finalPoints = currentPoints;
+
+  if (won) {
+    finalPoints += (payout - betAmount);
+  } else {
+    finalPoints -= betAmount;
+  }
+  storage.setPoints(userId, finalPoints);
+  
+  const resultEmbed = new EmbedBuilder()
+    .setColor(won ? 0x00FF00 : 0xFF0000)
+    .setTitle('🎰 Roulette Results')
+    .setDescription(`The ball landed on **${numberToColor(spin)} ${spin}**.\n\n${resultText}`)
+    .addFields(
+      { name: 'Bet Amount', value: `${betAmount} points`, inline: true },
+      { name: 'Outcome', value: won ? `+${payout - betAmount}` : `-${betAmount}`, inline: true },
+      { name: 'New Balance', value: `${finalPoints} points`, inline: true }
+    )
+    .setFooter({ text: `Player: ${interaction.user.username}` })
+    .setTimestamp();
+  
+  await interaction.editReply({ embeds: [resultEmbed], components: [] });
+}
+
+// Multiplayer Roulette Helper Functions
+async function updateRouletteMessage(game) {
+  if (!game.message) return;
+
+  const timeLeft = Math.max(0, Math.ceil((game.endTime - Date.now()) / 1000));
+  
+  const embed = new EmbedBuilder()
+    .setColor(0x1a1a1a)
+    .setTitle('🎰 **IMMERSIVE ROULETTE TABLE** 🎰')
+    .setDescription('**🕐 BETTING PHASE OPEN**\n\nPlace your bets! You have **' + timeLeft + ' seconds** to bet.');
+
+  // Add betting information
+  if (game.bets.size > 0) {
+    const betList = Array.from(game.bets.entries()).map(([userId, bet]) => {
+      const user = game.client.users.cache.get(userId);
+      const username = user ? user.username : 'Unknown User';
+      return `• **${username}**: ${bet.amount} on ${bet.type}${bet.number !== null ? ` (${bet.number})` : ''}`;
+    }).join('\n');
+    
+    embed.addFields({
+      name: '💰 Current Bets',
+      value: betList,
+      inline: false
+    });
+  } else {
+    embed.addFields({
+      name: '💰 Current Bets',
+      value: 'No bets placed yet',
+      inline: false
+    });
+  }
+
+  embed.addFields(
+    { name: '⏰ Time Remaining', value: timeLeft + ' seconds', inline: true },
+    { name: '🎯 Available Bets', value: '`red` `black` `green` `even` `odd` `high` `low` `straight [0-36]`', inline: false }
+  );
+
+  embed.setFooter({ text: 'Use /roulette-bet <amount> <type> to place your bet!' });
+  embed.setTimestamp();
+
+  await game.message.edit({ embeds: [embed] });
+}
+
+async function endBettingPhase(channelId) {
+  const game = activeRouletteGames.get(channelId);
+  if (!game) return;
+
+  // Generate winning number
+  game.currentNumber = ROULETTE_NUMBERS[Math.floor(Math.random() * ROULETTE_NUMBERS.length)];
+
+  // Animate the wheel
+  await animateRouletteWheel(game);
+
+  // Calculate results
+  const results = calculateResults(game);
+
+  // Show final results
+  const resultsEmbed = createResultsEmbed(game, results);
+  await game.message.edit({ embeds: [resultsEmbed] });
+
+  // Clean up
+  activeRouletteGames.delete(channelId);
+}
+
+async function animateRouletteWheel(game) {
+  const totalSpins = 40;
+  const winningIndex = ROULETTE_NUMBERS.indexOf(game.currentNumber);
+  let currentIndex = 0;
+
+  // Create spinning embed
+  const spinningEmbed = new EmbedBuilder()
+    .setColor(0x1a1a1a)
+    .setTitle('🎰 **ROULETTE WHEEL SPINNING** 🎰')
+    .setDescription('**No more bets!** The wheel is spinning...')
+    .setFooter({ text: 'Watching the ball...' })
+    .setTimestamp();
+
+  await game.message.edit({ embeds: [spinningEmbed] });
+
+  // Spin animation
+  for (let i = 0; i < totalSpins; i++) {
+    currentIndex = (currentIndex + 1) % ROULETTE_NUMBERS.length;
+    
+    const wheelSlice = [];
+    for (let j = -4; j <= 4; j++) {
+      const wheelIndex = (currentIndex + j + ROULETTE_NUMBERS.length) % ROULETTE_NUMBERS.length;
+      const number = ROULETTE_NUMBERS[wheelIndex];
+      if (j === 0) {
+        wheelSlice.push(`**${getNumberColor(number)}${number}**`);
+      } else {
+        wheelSlice.push(`${getNumberColor(number)}${number}`);
+      }
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0x1a1a1a)
+      .setTitle('🎰 **ROULETTE WHEEL SPINNING** 🎰')
+      .setDescription('**No more bets!** The wheel is spinning...\n\n' +
+        `\`${wheelSlice.slice(0, 4).join(' ')}\` ➡️ **${wheelSlice[4]}** ⬅️ \`${wheelSlice.slice(5).join(' ')}\``)
+      .setFooter({ text: 'Watching the ball...' })
+      .setTimestamp();
+
+    await game.message.edit({ embeds: [embed] });
+    
+    // Dynamic speed
+    const progress = i / totalSpins;
+    let delay;
+    if (progress < 0.3) delay = 80;
+    else if (progress < 0.6) delay = 150;
+    else if (progress < 0.8) delay = 300;
+    else delay = 500;
+    
+    await sleep(delay);
+  }
+
+  // Land on winning number
+  while (currentIndex !== winningIndex) {
+    currentIndex = (currentIndex + 1) % ROULETTE_NUMBERS.length;
+    
+    const wheelSlice = [];
+    for (let j = -4; j <= 4; j++) {
+      const wheelIndex = (currentIndex + j + ROULETTE_NUMBERS.length) % ROULETTE_NUMBERS.length;
+      const number = ROULETTE_NUMBERS[wheelIndex];
+      if (j === 0) {
+        wheelSlice.push(`**${getNumberColor(number)}${number}**`);
+      } else {
+        wheelSlice.push(`${getNumberColor(number)}${number}`);
+      }
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0x1a1a1a)
+      .setTitle('🎰 **ROULETTE WHEEL SPINNING** 🎰')
+      .setDescription('**Slowing down...**\n\n' +
+        `\`${wheelSlice.slice(0, 4).join(' ')}\` ➡️ **${wheelSlice[4]}** ⬅️ \`${wheelSlice.slice(5).join(' ')}\``)
+      .setFooter({ text: 'Almost there...' })
+      .setTimestamp();
+
+    await game.message.edit({ embeds: [embed] });
+    await sleep(800);
+  }
+
+  // Final landing
+  const finalEmbed = new EmbedBuilder()
+    .setColor(getNumberColor(game.currentNumber) === '🟢' ? 0x00FF00 : 
+             getNumberColor(game.currentNumber) === '🔴' ? 0xFF0000 : 0x808080)
+    .setTitle('🎰 **BALL HAS LANDED!** 🎰')
+    .setDescription(`**The ball landed on:** ${getNumberColor(game.currentNumber)} **${game.currentNumber}**`)
+    .setFooter({ text: 'Calculating results...' })
+    .setTimestamp();
+
+  await game.message.edit({ embeds: [finalEmbed] });
+  await sleep(2000);
+}
+
+function calculateResults(game) {
+  const results = {
+    winners: [],
+    losers: [],
+    totalWinnings: 0
+  };
+
+  for (const [userId, bet] of game.bets) {
+    const won = checkBetWin(bet, game.currentNumber);
+    
+    if (won) {
+      const winnings = getBetPayout(bet.type, bet.amount) - bet.amount;
+      results.winners.push({
+        userId: userId,
+        bet: bet,
+        winnings: winnings
+      });
+      results.totalWinnings += winnings;
+      
+      // Update user points
+      const currentPoints = storage.getPoints(userId);
+      storage.setPoints(userId, currentPoints + winnings);
+    } else {
+      results.losers.push({
+        userId: userId,
+        bet: bet,
+        loss: bet.amount
+      });
+      
+      // Deduct points
+      const currentPoints = storage.getPoints(userId);
+      storage.setPoints(userId, currentPoints - bet.amount);
+    }
+  }
+
+  return results;
+}
+
+function checkBetWin(bet, number) {
+  const num = parseInt(number);
+  
+  switch(bet.type) {
+    case 'red':
+      return RED_NUMBERS.has(num);
+    case 'black':
+      return BLACK_NUMBERS.has(num);
+    case 'green':
+      return num === 0;
+    case 'even':
+      return num !== 0 && num % 2 === 0;
+    case 'odd':
+      return num !== 0 && num % 2 === 1;
+    case 'high':
+      return num >= 19 && num <= 36;
+    case 'low':
+      return num >= 1 && num <= 18;
+    case 'first-dozen':
+      return num >= 1 && num <= 12;
+    case 'second-dozen':
+      return num >= 13 && num <= 24;
+    case 'third-dozen':
+      return num >= 25 && num <= 36;
+    case 'first-column':
+      return num % 3 === 1;
+    case 'second-column':
+      return num % 3 === 2;
+    case 'third-column':
+      return num % 3 === 0 && num !== 0;
+    case 'straight':
+      return num === parseInt(bet.number);
+    default:
+      return false;
+  }
+}
+
+function createResultsEmbed(game, results) {
+  const embed = new EmbedBuilder()
+    .setColor(getNumberColor(game.currentNumber) === '🟢' ? 0x00FF00 : 
+             getNumberColor(game.currentNumber) === '🔴' ? 0xFF0000 : 0x808080)
+    .setTitle('🎰 **ROULETTE RESULTS** 🎰')
+    .setDescription(`**The ball landed on:** ${getNumberColor(game.currentNumber)} **${game.currentNumber}**\n\n` +
+      `**Total bets:** ${game.bets.size}\n` +
+      `**Total winnings:** ${results.totalWinnings} points`);
+
+  // Show individual results
+  if (results.winners.length > 0 || results.losers.length > 0) {
+    let resultsText = '';
+    
+    if (results.winners.length > 0) {
+      resultsText += '**🎉 WINNERS:**\n';
+      results.winners.forEach(winner => {
+        const user = game.client.users.cache.get(winner.userId);
+        const username = user ? user.username : 'Unknown User';
+        resultsText += `• **${username}**: +${winner.winnings} points (${winner.bet.type})\n`;
+      });
+    }
+    
+    if (results.losers.length > 0) {
+      resultsText += '\n**💸 LOSSES:**\n';
+      results.losers.forEach(loser => {
+        const user = game.client.users.cache.get(loser.userId);
+        const username = user ? user.username : 'Unknown User';
+        resultsText += `• **${username}**: -${loser.loss} points (${loser.bet.type})\n`;
+      });
+    }
+    
+    embed.addFields({
+      name: '📊 Results',
+      value: resultsText,
+      inline: false
+    });
+  }
+
+  embed.setFooter({ text: 'Game complete! Use /roulette-start to start a new game.' });
+  embed.setTimestamp();
+
+  return embed;
+}
+
+// 1v1 Challenge System
+const challenges = new Map();
+
+function generateChallengeId() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+function getGameDisplayName(gameType) {
+  const gameNames = {
+    'rps': '🪨 Rock Paper Scissors',
+    'dice': '🎲 Dice Battle',
+    'coin': '🎯 Coin Flip'
+  };
+  return gameNames[gameType] || gameType;
+}
+
+async function start1v1Game(interaction, challenge) {
+  const challenger = await client.users.fetch(challenge.challenger);
+  const opponent = await client.users.fetch(challenge.opponent);
+  
+  // Deduct points from both players
+  storage.addPoints(challenge.challenger, -challenge.betAmount);
+  storage.addPoints(challenge.opponent, -challenge.betAmount);
+  
+  const embed = new EmbedBuilder()
+    .setColor(0xff6b35)
+    .setTitle(`⚔️ **${getGameDisplayName(challenge.gameType)}** ⚔️`)
+    .setDescription(`${challenger} vs ${opponent}\n💰 **Bet:** ${challenge.betAmount} points each`)
+    .setFooter({ text: 'Game starting...' })
+    .setTimestamp();
+
+  const message = await interaction.reply({ embeds: [embed], fetchReply: true });
+  
+  // Start the specific game
+  switch (challenge.gameType) {
+    case 'rps':
+      await playRockPaperScissors(message, challenge, challenger, opponent);
+      break;
+    case 'dice':
+      await playDiceBattle(message, challenge, challenger, opponent);
+      break;
+    case 'coin':
+      await playCoinFlip(message, challenge, challenger, opponent);
+      break;
+  }
+}
+
+async function playRockPaperScissors(message, challenge, challenger, opponent) {
+  const choices = ['🪨 Rock', '📄 Paper', '✂️ Scissors'];
+  const results = new Map();
+  
+  const embed = new EmbedBuilder()
+    .setColor(0x00ff00)
+    .setTitle('🪨 **ROCK PAPER SCISSORS** 🪨')
+    .setDescription(`${challenger} vs ${opponent}\n💰 **Bet:** ${challenge.betAmount} points each\n\n**Waiting for both players to choose...**`)
+    .setFooter({ text: 'React with 🪨 📄 ✂️ to make your choice' })
+    .setTimestamp();
+
+  await message.edit({ embeds: [embed] });
+  
+  // Add reaction options
+  await message.react('🪨');
+  await message.react('📄');
+  await message.react('✂️');
+  
+  const filter = (reaction, user) => {
+    return ['🪨', '📄', '✂️'].includes(reaction.emoji.name) && 
+           [challenger.id, opponent.id].includes(user.id) &&
+           !results.has(user.id);
+  };
+  
+  const collector = message.createReactionCollector({ filter, time: 30000, max: 2 });
+  
+  collector.on('collect', (reaction, user) => {
+    const choice = reaction.emoji.name === '🪨' ? 0 : reaction.emoji.name === '📄' ? 1 : 2;
+    results.set(user.id, choice);
+    
+    if (results.size === 2) {
+      collector.stop();
+    }
+  });
+  
+  collector.on('end', async () => {
+    if (results.size < 2) {
+      // Timeout or not enough players
+      const timeoutEmbed = new EmbedBuilder()
+        .setColor(0xff0000)
+        .setTitle('⏰ **GAME TIMEOUT** ⏰')
+        .setDescription('One or both players failed to make a choice in time.\n💰 **Bet refunded to both players.**')
+        .setTimestamp();
+      
+      // Refund points
+      storage.addPoints(challenge.challenger, challenge.betAmount);
+      storage.addPoints(challenge.opponent, challenge.betAmount);
+      
+      await message.edit({ embeds: [timeoutEmbed] });
+      return;
+    }
+    
+    const challengerChoice = results.get(challenger.id);
+    const opponentChoice = results.get(opponent.id);
+    
+    // Determine winner
+    let winner, loser, reason;
+    if (challengerChoice === opponentChoice) {
+      // Tie
+      winner = null;
+      reason = "It's a tie!";
+    } else if (
+      (challengerChoice === 0 && opponentChoice === 2) || // Rock beats Scissors
+      (challengerChoice === 1 && opponentChoice === 0) || // Paper beats Rock
+      (challengerChoice === 2 && opponentChoice === 1)    // Scissors beats Paper
+    ) {
+      winner = challenger;
+      loser = opponent;
+      reason = `${choices[challengerChoice]} beats ${choices[opponentChoice]}`;
+    } else {
+      winner = opponent;
+      loser = challenger;
+      reason = `${choices[opponentChoice]} beats ${choices[challengerChoice]}`;
+    }
+    
+    // Award points
+    if (winner) {
+      storage.addPoints(winner.id, challenge.betAmount * 2);
+    } else {
+      // Tie - refund both players
+      storage.addPoints(challenge.challenger, challenge.betAmount);
+      storage.addPoints(challenge.opponent, challenge.betAmount);
+    }
+    
+    const resultEmbed = new EmbedBuilder()
+      .setColor(winner ? 0x00ff00 : 0xffff00)
+      .setTitle('🪨 **ROCK PAPER SCISSORS - RESULT** 🪨')
+      .setDescription(`${challenger}: ${choices[challengerChoice]}\n${opponent}: ${choices[opponentChoice]}\n\n**${reason}**`)
+      .addFields(
+        { name: '🏆 Winner', value: winner ? winner.toString() : 'Tie!', inline: true },
+        { name: '💰 Prize', value: winner ? `${challenge.betAmount * 2} points` : 'Refunded', inline: true }
+      )
+      .setTimestamp();
+    
+    await message.edit({ embeds: [resultEmbed] });
+  });
+}
+
+async function playDiceBattle(message, challenge, challenger, opponent) {
+  const embed = new EmbedBuilder()
+    .setColor(0x00ff00)
+    .setTitle('🎲 **DICE BATTLE** 🎲')
+    .setDescription(`${challenger} vs ${opponent}\n💰 **Bet:** ${challenge.betAmount} points each\n\n**Rolling dice...**`)
+    .setTimestamp();
+
+  await message.edit({ embeds: [embed] });
+  
+  // Simulate dice rolling animation
+  for (let i = 0; i < 3; i++) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const tempRoll1 = Math.floor(Math.random() * 6) + 1;
+    const tempRoll2 = Math.floor(Math.random() * 6) + 1;
+    
+    const tempEmbed = new EmbedBuilder()
+      .setColor(0x00ff00)
+      .setTitle('🎲 **DICE BATTLE** 🎲')
+      .setDescription(`${challenger} vs ${opponent}\n💰 **Bet:** ${challenge.betAmount} points each\n\n**Rolling dice...**\n${challenger}: **${tempRoll1}**\n${opponent}: **${tempRoll2}**`)
+      .setTimestamp();
+    
+    await message.edit({ embeds: [tempEmbed] });
+  }
+  
+  // Final roll
+  const roll1 = Math.floor(Math.random() * 6) + 1;
+  const roll2 = Math.floor(Math.random() * 6) + 1;
+  
+  let winner, loser, reason;
+  if (roll1 > roll2) {
+    winner = challenger;
+    loser = opponent;
+    reason = `${roll1} beats ${roll2}`;
+  } else if (roll2 > roll1) {
+    winner = opponent;
+    loser = challenger;
+    reason = `${roll2} beats ${roll1}`;
+  } else {
+    winner = null;
+    reason = "It's a tie!";
+  }
+  
+  // Award points
+  if (winner) {
+    storage.addPoints(winner.id, challenge.betAmount * 2);
+  } else {
+    // Tie - refund both players
+    storage.addPoints(challenge.challenger, challenge.betAmount);
+    storage.addPoints(challenge.opponent, challenge.betAmount);
+  }
+  
+  const resultEmbed = new EmbedBuilder()
+    .setColor(winner ? 0x00ff00 : 0xffff00)
+    .setTitle('🎲 **DICE BATTLE - RESULT** 🎲')
+    .setDescription(`${challenger}: **${roll1}**\n${opponent}: **${roll2}**\n\n**${reason}**`)
+    .addFields(
+      { name: '🏆 Winner', value: winner ? winner.toString() : 'Tie!', inline: true },
+      { name: '💰 Prize', value: winner ? `${challenge.betAmount * 2} points` : 'Refunded', inline: true }
+    )
+    .setTimestamp();
+  
+  await message.edit({ embeds: [resultEmbed] });
+}
+
+async function playCoinFlip(message, challenge, challenger, opponent) {
+  const embed = new EmbedBuilder()
+    .setColor(0x00ff00)
+    .setTitle('🎯 **COIN FLIP** 🎯')
+    .setDescription(`${challenger} vs ${opponent}\n💰 **Bet:** ${challenge.betAmount} points each\n\n**Flipping coin...**`)
+    .setTimestamp();
+
+  await message.edit({ embeds: [embed] });
+  
+  // Simulate coin flip animation
+  for (let i = 0; i < 5; i++) {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    const tempResult = Math.random() < 0.5 ? 'HEADS' : 'TAILS';
+    
+    const tempEmbed = new EmbedBuilder()
+      .setColor(0x00ff00)
+      .setTitle('🎯 **COIN FLIP** 🎯')
+      .setDescription(`${challenger} vs ${opponent}\n💰 **Bet:** ${challenge.betAmount} points each\n\n**Flipping coin...**\n🎯 **${tempResult}**`)
+      .setTimestamp();
+    
+    await message.edit({ embeds: [tempEmbed] });
+  }
+  
+  // Final result
+  const result = Math.random() < 0.5 ? 'HEADS' : 'TAILS';
+  const winner = result === 'HEADS' ? challenger : opponent;
+  const loser = result === 'HEADS' ? opponent : challenger;
+  
+  // Award points
+  storage.addPoints(winner.id, challenge.betAmount * 2);
+  
+  const resultEmbed = new EmbedBuilder()
+    .setColor(0x00ff00)
+    .setTitle('🎯 **COIN FLIP - RESULT** 🎯')
+    .setDescription(`🎯 **${result}**\n\n**${winner} wins!**`)
+    .addFields(
+      { name: '🏆 Winner', value: winner.toString(), inline: true },
+      { name: '💰 Prize', value: `${challenge.betAmount * 2} points`, inline: true }
+    )
+    .setTimestamp();
+  
+  await message.edit({ embeds: [resultEmbed] });
 }
 
 client.login(process.env.DISCORD_TOKEN); 
