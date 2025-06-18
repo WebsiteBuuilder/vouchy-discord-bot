@@ -10,6 +10,9 @@ const storage = require('./storage.js');
 // In-memory timer management for roulette - doesn't need to be persisted
 const rouletteTimers = new Map();
 
+// Blackjack game storage
+const blackjackGames = new Map();
+
 // NEW STORAGE SYSTEM - All data managed by storage.js
 // Legacy variables removed - using storage directly now
 
@@ -588,21 +591,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const betAmount = interaction.options.getInteger('amount');
     const userId = interaction.user.id;
     const userPoints = storage.getPoints(userId);
-
+    
     if (userPoints < betAmount) {
       return interaction.reply({
         embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Insufficient Points').setDescription(`You need **${betAmount}** points to play. You have **${userPoints}**.`)],
         ephemeral: true,
       });
     }
-
-    if (storage.getGame(userId)) {
+    
+    if (blackjackGames.has(userId)) {
       return interaction.reply({
         embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Game in Progress').setDescription('You already have a blackjack game running!')],
         ephemeral: true,
       });
     }
-
+    
     // Start the game immediately
     await playBlackjackSlash(interaction, betAmount);
     return;
@@ -625,33 +628,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const gameType = interaction.options.getString('game');
     const betAmount = interaction.options.getInteger('bet');
     const challenger = interaction.user;
-
+    
     // Can't challenge yourself
     if (opponent.id === challenger.id) {
-      return interaction.reply({
+      return interaction.reply({ 
         content: '❌ You cannot challenge yourself!',
         ephemeral: true,
       });
     }
-
+    
     // Check if challenger has enough points
     const challengerPoints = storage.getPoints(challenger.id);
     if (challengerPoints < betAmount) {
-      return interaction.reply({
+      return interaction.reply({ 
         content: `❌ You don't have enough points! You have ${challengerPoints} points but need ${betAmount}.`,
         ephemeral: true,
       });
     }
-
+    
     // Check if opponent has enough points
     const opponentPoints = storage.getPoints(opponent.id);
     if (opponentPoints < betAmount) {
-      return interaction.reply({
+      return interaction.reply({ 
         content: `❌ ${opponent.username} doesn't have enough points! They have ${opponentPoints} points but need ${betAmount}.`,
         ephemeral: true,
       });
     }
-
+    
     // Create challenge
     const challengeId = generateChallengeId();
     const challenge = {
@@ -682,7 +685,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       )
       .setFooter({ text: `Use /accept ${challengeId} to accept or /decline ${challengeId} to decline` })
       .setTimestamp();
-
+    
     await interaction.reply({ embeds: [embed] });
 
     // Auto-delete challenge after 5 minutes
@@ -710,7 +713,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         content: '❌ Challenge not found or has expired!',
         ephemeral: true,
       });
-    }
+  }
 
     const challenge = opponentChallenges.get(challengeId);
     if (challenge.status !== 'pending') {
@@ -750,7 +753,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         content: '❌ This challenge has already been processed!',
         ephemeral: true,
       });
-    }
+  }
 
     // Remove challenge
     opponentChallenges.delete(challengeId);
@@ -772,7 +775,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         content: '❌ You need Administrator permissions to use this command!',
         ephemeral: true,
       });
-    }
+  }
 
     await interaction.deferReply({ ephemeral: true });
 
@@ -874,47 +877,42 @@ async function playBlackjack(message, betAmount) {
 
 // BULLETPROOF BLACKJACK BUTTON HANDLER
 async function handleBlackjackButton(interaction, clickerId) {
+  const game = blackjackGames.get(clickerId);
+  
+  if (!game) {
+    return interaction.reply({
+      embeds: [createErrorEmbed('🃏 Game not found!', 'Your blackjack game has expired or was not found. This can happen after 10 minutes of inactivity.')],
+      ephemeral: true
+    });
+  }
+
+  const action = interaction.customId.split('_')[1]; // Extract action from 'bj_hit', 'bj_stand', etc.
+  
   try {
-    // ALWAYS defer first - this prevents ANY timeout issues
-    await interaction.deferUpdate().catch(() => {}); // Ignore if already deferred
-
-    const gameOwnerId = interaction.customId.split('_')[2];
-
-    // Check if the person who clicked is the person who started the game
-    if (clickerId !== gameOwnerId) {
-      return interaction.followUp({ content: 'This is not your game! Start your own with `/bj`.', ephemeral: true });
-    }
-    
-    const game = storage.getGame(gameOwnerId);
-    if (!game) {
-      return await safeReply(interaction, {
-        embeds: [createErrorEmbed('🃏 Game not found!', 'Your blackjack game has expired or was not found. This can happen after 10 minutes of inactivity.')],
-        components: []
-      });
-    }
-    
-    const action = interaction.customId.split('_')[1]; // Extract action from bj_ACTION_userId
-    
     switch (action) {
       case 'hit':
-        return await handleHit(interaction, game);
+        await handleHit(interaction, game);
+        break;
       case 'stand':
-        return await handleStand(interaction, game);
+        await handleStand(interaction, game);
+        break;
       case 'double':
-        return await handleDoubleDown(interaction, game);
+        await handleDoubleDown(interaction, game);
+        break;
       case 'quit':
-        return await handleQuit(interaction, game);
+        await handleQuit(interaction, game);
+        break;
       default:
-        return await safeReply(interaction, {
-          embeds: [createErrorEmbed('❌ Unknown Action', 'Invalid button action detected.')],
-          components: []
+        await interaction.reply({
+          content: '❌ Unknown action!',
+          ephemeral: true
         });
     }
   } catch (error) {
     console.error('Blackjack button error:', error);
-    return await safeReply(interaction, {
-      embeds: [createErrorEmbed('🔧 System Error', 'A technical error occurred. Please try starting a new game.')],
-      components: []
+    await safeReply(interaction, {
+      embeds: [createErrorEmbed('❌ Game Error', 'An error occurred during the game. Please try again.')],
+      ephemeral: true
     });
   }
 }
@@ -1079,28 +1077,28 @@ async function endGame(interaction, game, playerWon, reason) {
 function createBlackjackButtons(userId, canDoubleDown = true) {
   const buttons = [
     new ButtonBuilder()
-      .setCustomId(`bj_hit_${userId}`)
-      .setLabel('🃏 Hit Me!')
+      .setCustomId('bj_hit')
+      .setLabel('Hit')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId(`bj_stand_${userId}`)
-      .setLabel('✋ I Stand')
-      .setStyle(ButtonStyle.Secondary)
+      .setCustomId('bj_stand')
+      .setLabel('Stand')
+      .setStyle(ButtonStyle.Secondary),
   ];
   
   if (canDoubleDown) {
     buttons.push(
       new ButtonBuilder()
-        .setCustomId(`bj_double_${userId}`)
-        .setLabel('💰 Double Down!')
+        .setCustomId('bj_double')
+        .setLabel('Double Down')
         .setStyle(ButtonStyle.Success)
     );
   }
   
   buttons.push(
     new ButtonBuilder()
-      .setCustomId(`bj_quit_${userId}`)
-      .setLabel('❌ Quit')
+      .setCustomId('bj_quit')
+      .setLabel('Quit')
       .setStyle(ButtonStyle.Danger)
   );
   
@@ -1109,28 +1107,49 @@ function createBlackjackButtons(userId, canDoubleDown = true) {
 
 // BULLETPROOF blackjack slash command
 async function playBlackjackSlash(interaction, betAmount) {
-    const userId = interaction.user.id;
+  const userId = interaction.user.id;
+  
+  // Deduct points immediately
+  storage.addPoints(userId, -betAmount);
+  
+  // Create game object
+  const deck = createDeck();
+  const game = {
+    userId: userId,
+    betAmount: betAmount,
+    deck: deck,
+    playerHand: [drawCard(deck), drawCard(deck)],
+    dealerHand: [drawCard(deck), drawCard(deck)],
+    isDoubleDown: false
+  };
+  
+  blackjackGames.set(userId, game);
+  
+  const playerValue = getHandValue(game.playerHand);
 
-    const game = storage.createGame(userId, betAmount);
-    const playerValue = storage.getHandValue(game.playerHand);
+  if (playerValue === 21) {
+    // Natural Blackjack - immediate win
+    blackjackGames.delete(userId);
+    const winnings = Math.floor(betAmount * 2.5); // Blackjack pays 2.5x
+    storage.addPoints(userId, winnings);
+    
+    const embed = createBlackjackEmbed(game, true)
+      .setTitle('🃏 **BLACKJACK!** 🃏')
+      .setDescription(`🎉 **Natural Blackjack!** You win **${winnings - betAmount}** points!`)
+      .setColor(0x00ff00);
+    
+    return interaction.reply({ embeds: [embed] });
+  }
+  
+  const embed = createBlackjackEmbed(game, false);
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('bj_hit').setLabel('Hit').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('bj_stand').setLabel('Stand').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('bj_double').setLabel('Double Down').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('bj_quit').setLabel('Quit').setStyle(ButtonStyle.Danger)
+  );
 
-    if (playerValue === 21) {
-        // Natural Blackjack
-        return handleBlackjackEnd(interaction, game, { playerWon: true, reason: 'Blackjack! 🎉' });
-    }
-
-    const embed = storage.createBlackjackEmbed(game, false, "Place your bet!");
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('blackjack_hit').setLabel('Hit').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('blackjack_stand').setLabel('Stand').setStyle(ButtonStyle.Secondary)
-    );
-
-    // If it's a new interaction, reply. If it's from a button, update.
-    if (interaction.replied || interaction.deferred) {
-        await interaction.editReply({ embeds: [embed], components: [row] });
-    } else {
-        await interaction.reply({ embeds: [embed], components: [row] });
-    }
+  await interaction.reply({ embeds: [embed], components: [row] });
 }
 
 // Legacy reaction handler removed - now using modern button system
@@ -1206,31 +1225,31 @@ function createBlackjackEmbed(game, showDealerCards) {
 
 async function handleBlackjackEnd(interaction, game, result) {
     let { playerWon, reason } = result;
-
+  
     // Play out dealer's hand if not an instant win/loss
-    if (playerWon === null) {
+  if (playerWon === null) {
         while (storage.getHandValue(game.dealerHand) < 17) {
             game.dealerHand.push(storage.drawCard(game.deck));
-        }
+    }
         const playerValue = storage.getHandValue(game.playerHand);
         const dealerValue = storage.getHandValue(game.dealerHand);
-
-        if (dealerValue > 21) {
-            playerWon = true;
-            reason = 'Dealer busted!';
-        } else if (dealerValue > playerValue) {
-            playerWon = false;
-            reason = 'Dealer wins!';
-        } else if (playerValue > dealerValue) {
-            playerWon = true;
-            reason = 'You win!';
-        } else {
+    
+    if (dealerValue > 21) {
+      playerWon = true;
+      reason = 'Dealer busted!';
+    } else if (dealerValue > playerValue) {
+      playerWon = false;
+      reason = 'Dealer wins!';
+    } else if (playerValue > dealerValue) {
+      playerWon = true;
+      reason = 'You win!';
+    } else {
             playerWon = 'push'; // Tie
             reason = 'Push (tie)! Your bet is returned.';
-        }
     }
-
-    // Update points
+  }
+  
+  // Update points
     const finalPoints = storage.endGame(game.userId, playerWon);
     storage.deleteGame(game.userId);
 
@@ -1248,7 +1267,7 @@ async function handleBlackjackEnd(interaction, game, result) {
         .setColor(won ? 0x00FF00 : 0xFF0000)
         .setDescription(won ? `**${interaction.user.username}** won **${payout - betAmount}** points!` : `**${interaction.user.username}** lost **${betAmount}** points.`)
         .setFooter({ text: `New balance: ${finalPoints} points` });
-
+  
     await interaction.followUp({ embeds: [summaryEmbed] });
 }
 

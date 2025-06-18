@@ -371,14 +371,84 @@ async function startRoulette(interaction) {
 
   // End betting phase after 30 seconds
   setTimeout(() => {
-    endBettingPhase(channelId);
+    const storage = require('./storage.js');
+    endBettingPhase(channelId, storage);
   }, 30 * 1000);
 
   console.log(`🎰 Roulette game started in channel ${channelId}`);
 }
 
+async function placeBet(interaction) {
+  const channelId = interaction.channelId;
+  const game = activeRouletteGames.get(channelId);
+  
+  if (!game) {
+    return interaction.reply({
+      content: '❌ No active roulette game in this channel! Use `/roulette-start` to begin.',
+      ephemeral: true,
+    });
+  }
+  
+  if (Date.now() > game.endTime) {
+    return interaction.reply({
+      content: '❌ Betting time has ended! The wheel is spinning.',
+      ephemeral: true,
+    });
+  }
+  
+  const userId = interaction.user.id;
+  const amount = interaction.options.getInteger('amount');
+  const type = interaction.options.getString('type');
+  const number = interaction.options.getInteger('number');
+  
+  // Import storage to check points
+  const { Storage } = require('./storage.js');
+  const storage = require('./storage.js');
+  
+  if (storage.getPoints(userId) < amount) {
+    return interaction.reply({
+      content: `❌ You don't have enough points! You have ${storage.getPoints(userId)} points.`,
+      ephemeral: true,
+    });
+  }
+  
+  if (game.bets.has(userId)) {
+    return interaction.reply({
+      content: '❌ You already have a bet placed for this round!',
+      ephemeral: true,
+    });
+  }
+  
+  // Validate straight number bet
+  if (type === 'straight' && (number === null || number < 0 || number > 36)) {
+    return interaction.reply({
+      content: '❌ For straight bets, you must specify a number between 0-36!',
+      ephemeral: true,
+    });
+  }
+  
+  // Store the bet
+  game.bets.set(userId, {
+    amount: amount,
+    type: type,
+    number: number
+  });
+  
+  const payout = getBetPayout(type, amount);
+  
+  await interaction.reply({
+    content: `✅ **Bet placed!** ${amount} points on **${type}**${number !== null ? ` (${number})` : ''}\n💰 **Potential payout:** ${payout} points`,
+    ephemeral: true,
+  });
+  
+  // Update the main message
+  await updateRouletteMessage(game);
+}
+
 module.exports = {
     activeRouletteGames,
+    startRoulette,
+    placeBet,
     updateRouletteMessage,
     endBettingPhase,
     checkBetWin,
