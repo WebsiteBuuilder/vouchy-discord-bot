@@ -350,12 +350,14 @@ async function handleRecountVouches(interaction) {
 
     console.log(`🔍 Provider role found: ${providerRole.name} with ${providerRole.members.size} members`);
 
-    // Clear existing points
-    const currentUsers = storage.getAllPoints();
-    Object.keys(currentUsers).forEach(userId => {
+    // Capture current points so we can preserve manual adjustments
+    const previousPoints = storage.getAllPoints();
+
+    // Clear existing points so we can recount vouches from scratch
+    Object.keys(previousPoints).forEach(userId => {
       storage.setPoints(userId, 0);
     });
-    console.log(`🗑️ Cleared points for ${Object.keys(currentUsers).length} users`);
+    console.log(`🗑️ Cleared points for ${Object.keys(previousPoints).length} users`);
 
     let totalVouchesProcessed = 0;
     let totalPointsAwarded = 0;
@@ -418,6 +420,19 @@ async function handleRecountVouches(interaction) {
       console.log(`📊 Processed ${channelVouches} vouches in ${channel.name}`);
     }
 
+    // Re-apply manual adjustments (any difference between previous points and newly counted vouch points)
+    let manualAdjustmentsApplied = 0;
+    const newPointsAfterVouch = storage.getAllPoints();
+    for (const [userId, prevPts] of Object.entries(previousPoints)) {
+      const vouchPts = newPointsAfterVouch[userId] ?? 0;
+      if (prevPts > vouchPts) {
+        const diff = prevPts - vouchPts;
+        storage.addPoints(userId, diff);
+        manualAdjustmentsApplied += diff;
+        console.log(`🛠️ Preserved manual adjustment of +${diff} for user ${userId}`);
+      }
+    }
+
     const usersWithPoints = Object.keys(storage.getAllPoints()).filter(id => storage.getPoints(id) > 0).length;
 
     const embed = new EmbedBuilder()
@@ -430,7 +445,8 @@ async function handleRecountVouches(interaction) {
         { name: '📊 Valid Vouches Found', value: totalVouchesProcessed.toString(), inline: true },
         { name: '💰 Points Awarded', value: totalPointsAwarded.toString(), inline: true },
         { name: '👥 Users with Points', value: usersWithPoints.toString(), inline: true },
-        { name: '🎭 Provider Role Members', value: providerRole.members.size.toString(), inline: true }
+        { name: '🎭 Provider Role Members', value: providerRole.members.size.toString(), inline: true },
+        { name: '🛠️ Manual Adjustments Preserved', value: manualAdjustmentsApplied.toString(), inline: true }
       )
       .setFooter({ text: 'All points have been recalculated from scratch' })
       .setTimestamp();
