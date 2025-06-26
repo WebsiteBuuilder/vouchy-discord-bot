@@ -87,14 +87,12 @@ client.on(Events.MessageCreate, async (message) => {
     return;
   }
 
-  // Award points to each mentioned provider
-  for (const provider of mentionedProviders) {
-    const currentPoints = storage.getPoints(provider.id);
-    const newPoints = currentPoints + POINTS_PER_VOUCH;
-    storage.setPoints(provider.id, newPoints);
-    
-    console.log(`💰 Awarded ${POINTS_PER_VOUCH} point to ${provider.username} (${currentPoints} → ${newPoints})`);
-  }
+  // Award points to the author (the person providing the vouch)
+  const currentPointsAuthor = storage.getPoints(message.author.id);
+  const newPointsAuthor = currentPointsAuthor + POINTS_PER_VOUCH;
+  storage.setPoints(message.author.id, newPointsAuthor);
+
+  console.log(`💰 Awarded ${POINTS_PER_VOUCH} point to ${message.author.username} (${currentPointsAuthor} → ${newPointsAuthor})`);
 
   // React to show message was processed
   try {
@@ -161,7 +159,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setTitle('📋 How to Vouch')
       .setDescription('**Want to vouch for a provider?**\n\n1. Post a screenshot of your experience\n2. Mention the provider with @username\n3. They automatically get vouch points!')
       .addFields(
-        { name: '✅ Valid Vouch', value: 'Image + Provider mention = Points awarded!', inline: true },
+        { name: '✅ Valid Vouch', value: 'Image + Provider mention = **You** earn a point!', inline: true },
         { name: '❌ Invalid Vouch', value: 'No image or no provider mention = No points', inline: true }
       )
       .setFooter({ text: 'Help keep our community trustworthy!' })
@@ -192,7 +190,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const receiverPoints = storage.getPoints(targetUser.id);
     storage.setPoints(targetUser.id, receiverPoints + amount);
 
-    const embed = new EmbedBuilder()
+      const embed = new EmbedBuilder()
       .setColor(0x00D4AA)
       .setTitle('💸 Points Sent!')
       .setDescription(`**${interaction.user.username}** sent **${amount}** points to **${targetUser.username}**`)
@@ -201,7 +199,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         { name: '💰 Their Balance', value: `${receiverPoints + amount} points`, inline: true }
       )
       .setTimestamp();
-
+    
     if (message) {
       embed.addFields({ name: '💌 Message', value: message, inline: false });
     }
@@ -232,7 +230,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         { name: 'Reason', value: reason, inline: false }
       )
       .setTimestamp();
-
+    
     await interaction.reply({ embeds: [embed] });
   }
 
@@ -247,14 +245,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setColor(0x00D4AA)
       .setTitle('💾 Storage Information')
       .setDescription('Current storage system status')
-      .addFields(
+    .addFields(
         { name: '🗄️ Environment', value: stats.environment, inline: true },
         { name: '👥 Total Users', value: stats.userCount.toString(), inline: true },
         { name: '💰 Total Points', value: stats.totalPoints.toString(), inline: true }
-      )
+    )
       .setFooter({ text: 'Backup completed automatically' })
-      .setTimestamp();
-
+    .setTimestamp();
+  
     await interaction.reply({ embeds: [embed] });
   }
 
@@ -281,8 +279,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setTitle('🗑️ User Removed')
       .setDescription(`**${targetUser.username}** has been removed from the system`)
       .addFields({ name: 'Points Removed', value: `${points} points`, inline: true })
-      .setTimestamp();
-
+    .setTimestamp();
+  
     await interaction.reply({ embeds: [embed] });
   }
 
@@ -317,9 +315,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 async function handleRecountVouches(interaction) {
-  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return await interaction.reply({ content: '❌ You need Administrator permissions to use this command!', ephemeral: true });
-  }
+    }
 
   await interaction.deferReply();
 
@@ -404,22 +402,12 @@ async function handleRecountVouches(interaction) {
 
           console.log(`📸 Found vouch with image from ${message.author.username} mentioning ${mentionedUsers.size} users`);
 
-          for (const [userId, user] of mentionedUsers) {
-            try {
-              const member = await guild.members.fetch(userId);
-              if (member && member.roles.cache.has(providerRole.id)) {
-                const currentPoints = storage.getPoints(userId);
-                storage.setPoints(userId, currentPoints + POINTS_PER_VOUCH);
-                totalPointsAwarded += POINTS_PER_VOUCH;
-                channelVouches++;
-                console.log(`✅ Awarded point to ${user.username} from message ${messageId}`);
-              } else {
-                console.log(`❌ ${user.username} is not a provider, skipping`);
-              }
-            } catch (error) {
-              console.log(`❌ Could not process member ${userId}: ${error.message}`);
-            }
-          }
+          // Award point to the author (person giving the vouch)
+          const currentPointsRecount = storage.getPoints(message.author.id);
+          storage.setPoints(message.author.id, currentPointsRecount + POINTS_PER_VOUCH);
+          totalPointsAwarded += POINTS_PER_VOUCH;
+          channelVouches++;
+          console.log(`✅ Awarded point to ${message.author.username} from message ${messageId}`);
         }
 
         lastMessageId = messages.last()?.id;
@@ -449,19 +437,19 @@ async function handleRecountVouches(interaction) {
 
     await interaction.editReply({ embeds: [embed] });
 
-  } catch (error) {
+    } catch (error) {
     console.error('Error during recount:', error);
     await interaction.editReply(`❌ An error occurred during the recount: ${error.message}`);
-  }
+    }
 }
 
 async function handleHotkeyCreate(interaction) {
-  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return await interaction.reply({ content: '❌ You need Administrator permissions to use this command!', ephemeral: true });
-  }
+    }
 
   const name = interaction.options.getString('name');
-  const message = interaction.options.getString('message');
+    const message = interaction.options.getString('message');
 
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
     return await interaction.reply({ content: '❌ Command name can only contain letters, numbers, underscores, and hyphens!', ephemeral: true });
@@ -469,7 +457,7 @@ async function handleHotkeyCreate(interaction) {
 
   const hotkeys = storage.getAllHotkeys();
   hotkeys[name] = message;
-  storage.setHotkey(name, message);
+    storage.setHotkey(name, message);
 
   const embed = new EmbedBuilder()
     .setColor(0x00D4AA)
@@ -482,24 +470,24 @@ async function handleHotkeyCreate(interaction) {
 }
 
 async function handleHotkeyDelete(interaction) {
-  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return await interaction.reply({ content: '❌ You need Administrator permissions to use this command!', ephemeral: true });
-  }
+    }
 
   const name = interaction.options.getString('name');
   const hotkeys = storage.getAllHotkeys();
 
   if (!hotkeys[name]) {
     return await interaction.reply({ content: `❌ No hotkey command found with name: \`${name}\``, ephemeral: true });
-  }
+    }
 
-  storage.deleteHotkey(name);
+    storage.deleteHotkey(name);
 
-  const embed = new EmbedBuilder()
-    .setColor(0xFF0000)
+        const embed = new EmbedBuilder()
+            .setColor(0xFF0000)
     .setTitle('🗑️ Hotkey Deleted!')
     .setDescription(`Deleted command: \`/${name}\``)
-    .setTimestamp();
+            .setTimestamp();
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -516,26 +504,26 @@ async function handleHotkeyList(interaction) {
     return await interaction.reply('No custom hotkey commands have been created yet.');
   }
 
-  const embed = new EmbedBuilder()
+        const embed = new EmbedBuilder()
     .setColor(0x00D4AA)
     .setTitle('📋 Custom Hotkey Commands')
     .setDescription(hotkeyList.map(name => `• \`/${name}\``).join('\n'))
     .setFooter({ text: `Total: ${hotkeyList.length} custom commands` })
     .setTimestamp();
-
+  
   await interaction.reply({ embeds: [embed] });
 }
 
 async function handleStoreOpen(interaction) {
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return await interaction.reply({ content: '❌ You need Administrator permissions to use this command!', ephemeral: true });
-  }
+    }
 
-  const embed = new EmbedBuilder()
+    const embed = new EmbedBuilder()
     .setColor(0x00D4AA)
     .setTitle('🏪 Store Opened!')
     .setDescription('The store is now open for business!')
-    .setTimestamp();
+      .setTimestamp();
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -543,13 +531,13 @@ async function handleStoreOpen(interaction) {
 async function handleStoreClose(interaction) {
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return await interaction.reply({ content: '❌ You need Administrator permissions to use this command!', ephemeral: true });
-  }
+    }
 
-  const embed = new EmbedBuilder()
+    const embed = new EmbedBuilder()
     .setColor(0xFF0000)
     .setTitle('🏪 Store Closed!')
     .setDescription('The store is now closed.')
-    .setTimestamp();
+      .setTimestamp();
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -565,12 +553,12 @@ async function handleReloadPoints(interaction) {
     .setColor(0x00D4AA)
     .setTitle('🔄 Points Reloaded!')
     .setDescription('Points data has been reloaded from storage')
-    .addFields(
+      .addFields(
       { name: '👥 Users', value: stats.userCount.toString(), inline: true },
       { name: '💰 Total Points', value: stats.totalPoints.toString(), inline: true }
-    )
-    .setTimestamp();
-
+      )
+      .setTimestamp();
+    
   await interaction.reply({ embeds: [embed] });
 }
 
