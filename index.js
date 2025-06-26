@@ -137,7 +137,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const [userId, points] = sortedUsers[i];
       let username = `User ${userId}`;
       try {
-        const user = await interaction.client.users.fetch(userId);
+        const user = await interaction.client.users.fetch(userId, { force: true });
         username = user.username;
       } catch (error) {
         console.log(`Could not fetch user ${userId}: ${error.message}`);
