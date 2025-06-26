@@ -250,7 +250,8 @@ class VouchyStorage extends EventEmitter {
     }
     
     getAllPoints() {
-        return new Map(this.points);
+        // Return a plain object so callers can use Object.keys/entries directly.
+        return Object.fromEntries(this.points);
     }
     
     deleteUser(userId) {
@@ -289,7 +290,8 @@ class VouchyStorage extends EventEmitter {
     }
     
     getAllHotkeys() {
-        return new Map(this.hotkeys);
+        // Return plain object for easier usage in command handlers
+        return Object.fromEntries(this.hotkeys);
     }
     
     // Roulette Table management
