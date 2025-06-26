@@ -125,8 +125,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   else if (commandName === 'leaderboard') {
-    const allUsers = storage.getAllUsers();
-    const sortedUsers = Object.entries(allUsers)
+    const allPoints = storage.getAllPoints();
+    const sortedUsers = Object.entries(allPoints)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 10);
 
