@@ -95,31 +95,53 @@ client.on(Events.MessageCreate, async (message) => {
 
   console.log(`💰 Awarded ${POINTS_PER_VOUCH} point to ${message.author.username} (${currentPointsAuthor} → ${newPointsAuthor})`);
 
-  // Watermark and reply with images
+  // -- VOUCH CONFIRMATION AND WATERMARKING --
+  
+  // Prepare a confirmation embed
+  const confirmationEmbed = new EmbedBuilder()
+    .setColor(0x28a745) // Green
+    .setTitle('✅ Vouch Recorded!')
+    .setDescription(`Thanks for your vouch, ${message.author.username}! We've added **${POINTS_PER_VOUCH}** point to your account.`)
+    .addFields({ name: 'New Balance', value: `You now have **${newPointsAuthor}** points.`, inline: true })
+    .setFooter({ text: 'Keep vouching to earn rewards!'})
+    .setTimestamp();
+
+  // This object will hold our reply content
+  let replyPayload = { embeds: [confirmationEmbed], fetchReply: true };
+
+  // Try to watermark images and add them to the payload
   try {
     const iconURL = message.guild.iconURL({ extension: 'png', size: 128 });
     const iconBuffer = iconURL ? await fetchBuffer(iconURL) : null;
     const watermarkedFiles = [];
+
     for (const attachment of message.attachments.values()) {
       const looksLikeImage = attachment.contentType?.startsWith('image/') || attachment.name?.match(/\.(jpg|jpeg|png|gif|webp|bmp|tiff)$/i);
       if (!looksLikeImage) continue;
+
       const imgBuf = await fetchBuffer(attachment.url);
       const wmBuf = await createWatermark(imgBuf, 'Quikeats', iconBuffer);
       watermarkedFiles.push(new AttachmentBuilder(wmBuf, { name: `wm_${attachment.name || 'image.jpg'}` }));
     }
-    if (watermarkedFiles.length) {
-      await message.reply({ files: watermarkedFiles });
+
+    if (watermarkedFiles.length > 0) {
+      replyPayload.files = watermarkedFiles;
+      // Set the first watermarked image as the embed's main image
+      confirmationEmbed.setImage(`attachment://${watermarkedFiles[0].name}`);
     }
   } catch (e) {
     console.log('Watermark error:', e.message);
+    // If watermarking fails, we'll still send the confirmation embed without images.
   }
-
-  // React to show message was processed
+  
+  // Send the final confirmation reply
   try {
-    await message.react('✅');
-    console.log(`✅ Reacted to vouch message from ${message.author.username}`);
+    await message.reply(replyPayload);
+    console.log(`✅ Sent detailed vouch confirmation to ${message.author.username}`);
   } catch (error) {
-    console.log(`❌ Could not react to message: ${error.message}`);
+    console.log(`❌ Could not send vouch confirmation reply: ${error.message}`);
+    // Fallback to a simple reaction if the reply fails
+    await message.react('👍').catch(console.error);
   }
 });
 
