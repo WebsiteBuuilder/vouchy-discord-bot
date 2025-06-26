@@ -29,7 +29,7 @@ const commands = [
     ),
   new SlashCommandBuilder()
     .setName('leaderboard')
-    .setDescription('🏆 Show the top 10 users with the most vouch points'),
+    .setDescription('🏆 Show the top 15 users with the most vouch points'),
   new SlashCommandBuilder()
     .setName('addpoints')
     .setDescription('⚖️ Add or remove points from a user (Admin only)')

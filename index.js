@@ -126,7 +126,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const allPoints = storage.getAllPoints();
     const sortedUsers = Object.entries(allPoints)
       .sort(([, a], [, b]) => b - a)
-      .slice(0, 10);
+      .slice(0, 15);
 
     if (sortedUsers.length === 0) {
       return await interaction.reply('No users have vouch points yet!');
@@ -146,7 +146,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const embed = new EmbedBuilder()
       .setColor(0x00D4AA)
-      .setTitle('🏆 Vouch Points Leaderboard')
+      .setTitle('🏆 Vouch Points Leaderboard (Top 15)')
       .setDescription(description)
       .setTimestamp();
 
