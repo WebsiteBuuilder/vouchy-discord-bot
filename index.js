@@ -177,15 +177,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   else if (commandName === 'vouch') {
+    const vouchChannel = interaction.guild.channels.cache.find(c => c.name.toLowerCase().includes('vouch') && c.isTextBased());
+    const vouchMention = vouchChannel ? `<#${vouchChannel.id}>` : 'the vouch channel';
+
     const embed = new EmbedBuilder()
       .setColor(0x00D4AA)
-      .setTitle('📋 How to Vouch')
-      .setDescription('**Want to vouch for a provider?**\n\n1. Post a screenshot of your experience\n2. Mention the provider with @username\n3. They automatically get vouch points!')
+      .setTitle('📋 How to Vouch on Quikeats')
+      .setDescription(`Want to leave a vouch on **Quikeats**? Head over to ${vouchMention} and:
+
+1. Post a screenshot of your experience
+2. Mention the provider with **@username**
+3. You automatically earn a vouch point!`)
       .addFields(
-        { name: '✅ Valid Vouch', value: 'Image + Provider mention = **You** earn a point!', inline: true },
-        { name: '❌ Invalid Vouch', value: 'No image or no provider mention = No points', inline: true }
+        { name: '✅ Valid Vouch', value: 'Screenshot + Provider mention = Point awarded', inline: true },
+        { name: '❌ Invalid Vouch', value: 'Missing screenshot **or** provider mention = No points', inline: true }
       )
-      .setFooter({ text: 'Help keep our community trustworthy!' })
+      .setFooter({ text: 'Thank you for helping Quikeats stay trustworthy!' })
       .setTimestamp();
 
     await interaction.reply({ embeds: [embed] });
@@ -532,7 +539,7 @@ async function handleHotkeyDelete(interaction) {
 }
 
 async function handleHotkeyList(interaction) {
-  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return await interaction.reply({ content: '❌ You need Administrator permissions to use this command!', ephemeral: true });
   }
 
@@ -541,9 +548,9 @@ async function handleHotkeyList(interaction) {
 
   if (hotkeyList.length === 0) {
     return await interaction.reply('No custom hotkey commands have been created yet.');
-  }
+    }
 
-        const embed = new EmbedBuilder()
+    const embed = new EmbedBuilder()
     .setColor(0x00D4AA)
     .setTitle('📋 Custom Hotkey Commands')
     .setDescription(hotkeyList.map(name => `• \`/${name}\``).join('\n'))
@@ -568,15 +575,15 @@ async function handleStoreOpen(interaction) {
 }
 
 async function handleStoreClose(interaction) {
-  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return await interaction.reply({ content: '❌ You need Administrator permissions to use this command!', ephemeral: true });
     }
 
-    const embed = new EmbedBuilder()
-    .setColor(0xFF0000)
+        const embed = new EmbedBuilder()
+            .setColor(0xFF0000)
     .setTitle('🏪 Store Closed!')
     .setDescription('The store is now closed.')
-      .setTimestamp();
+            .setTimestamp();
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -588,16 +595,16 @@ async function handleReloadPoints(interaction) {
 
   const stats = storage.getStats();
   
-  const embed = new EmbedBuilder()
+        const embed = new EmbedBuilder()
     .setColor(0x00D4AA)
     .setTitle('🔄 Points Reloaded!')
     .setDescription('Points data has been reloaded from storage')
-      .addFields(
+    .addFields(
       { name: '👥 Users', value: stats.userCount.toString(), inline: true },
       { name: '💰 Total Points', value: stats.totalPoints.toString(), inline: true }
-      )
-      .setTimestamp();
-    
+    )
+    .setTimestamp();
+  
   await interaction.reply({ embeds: [embed] });
 }
 
@@ -607,12 +614,12 @@ async function handleRestoreBackup(interaction) {
   }
 
   const filename = interaction.options.getString('filename');
-  
-  const embed = new EmbedBuilder()
+
+    const embed = new EmbedBuilder()
     .setColor(0x00D4AA)
     .setTitle('📥 Backup Restored!')
     .setDescription(`Successfully restored data from ${filename}`)
-    .setTimestamp();
+      .setTimestamp();
 
   await interaction.reply({ embeds: [embed] });
 }
