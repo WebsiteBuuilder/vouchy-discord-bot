@@ -309,7 +309,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   else {
     // Check if it's a custom hotkey command
-    const hotkeys = storage.getHotkeys();
+    const hotkeys = storage.getAllHotkeys();
     if (hotkeys[commandName]) {
       await interaction.reply(hotkeys[commandName]);
     }
@@ -353,7 +353,7 @@ async function handleRecountVouches(interaction) {
     console.log(`🔍 Provider role found: ${providerRole.name} with ${providerRole.members.size} members`);
 
     // Clear existing points
-    const currentUsers = storage.getAllUsers();
+    const currentUsers = storage.getAllPoints();
     Object.keys(currentUsers).forEach(userId => {
       storage.setPoints(userId, 0);
     });
@@ -430,7 +430,7 @@ async function handleRecountVouches(interaction) {
       console.log(`📊 Processed ${channelVouches} vouches in ${channel.name}`);
     }
 
-    const usersWithPoints = Object.keys(storage.getAllUsers()).filter(id => storage.getPoints(id) > 0).length;
+    const usersWithPoints = Object.keys(storage.getAllPoints()).filter(id => storage.getPoints(id) > 0).length;
 
     const embed = new EmbedBuilder()
       .setColor(0x00D4AA)
@@ -467,9 +467,9 @@ async function handleHotkeyCreate(interaction) {
     return await interaction.reply({ content: '❌ Command name can only contain letters, numbers, underscores, and hyphens!', ephemeral: true });
   }
 
-  const hotkeys = storage.getHotkeys();
+  const hotkeys = storage.getAllHotkeys();
   hotkeys[name] = message;
-  storage.setHotkeys(hotkeys);
+  storage.setHotkey(name, message);
 
   const embed = new EmbedBuilder()
     .setColor(0x00D4AA)
@@ -487,14 +487,13 @@ async function handleHotkeyDelete(interaction) {
   }
 
   const name = interaction.options.getString('name');
-  const hotkeys = storage.getHotkeys();
+  const hotkeys = storage.getAllHotkeys();
 
   if (!hotkeys[name]) {
     return await interaction.reply({ content: `❌ No hotkey command found with name: \`${name}\``, ephemeral: true });
   }
 
-  delete hotkeys[name];
-  storage.setHotkeys(hotkeys);
+  storage.deleteHotkey(name);
 
   const embed = new EmbedBuilder()
     .setColor(0xFF0000)
@@ -510,7 +509,7 @@ async function handleHotkeyList(interaction) {
     return await interaction.reply({ content: '❌ You need Administrator permissions to use this command!', ephemeral: true });
   }
 
-  const hotkeys = storage.getHotkeys();
+  const hotkeys = storage.getAllHotkeys();
   const hotkeyList = Object.keys(hotkeys);
 
   if (hotkeyList.length === 0) {
