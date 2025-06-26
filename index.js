@@ -178,21 +178,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   else if (commandName === 'vouch') {
     const vouchChannel = interaction.guild.channels.cache.find(c => c.name.toLowerCase().includes('vouch') && c.isTextBased());
-    const vouchMention = vouchChannel ? `<#${vouchChannel.id}>` : 'the vouch channel';
+    const vouchMention = vouchChannel ? `in ${vouchChannel}` : 'in the vouch channel';
 
     const embed = new EmbedBuilder()
       .setColor(0x00D4AA)
-      .setTitle('📋 How to Vouch on Quikeats')
-      .setDescription(`Want to leave a vouch on **Quikeats**? Head over to ${vouchMention} and:
+      .setTitle("🎉 Thanks for your order from Quikeats!")
+      .setDescription(`Want to earn points towards **free food**? It's easy!
 
-1. Post a screenshot of your experience
-2. Mention the provider with **@username**
-3. You automatically earn a vouch point!`)
+**How to get your points:**
+1.  Post a screenshot of your order ${vouchMention}.
+2.  Tag the provider with **@username**.
+
+That's it! Our bot will automatically see your vouch, post a watermarked copy of your image, and add points to your account.`)
       .addFields(
-        { name: '✅ Valid Vouch', value: 'Screenshot + Provider mention = Point awarded', inline: true },
-        { name: '❌ Invalid Vouch', value: 'Missing screenshot **or** provider mention = No points', inline: true }
+        { name: '💰 What are points for?', value: 'Save up points to redeem for free orders and other rewards!', inline: false }
       )
-      .setFooter({ text: 'Thank you for helping Quikeats stay trustworthy!' })
+      .setFooter({ text: 'Every vouch helps our community grow. We appreciate you!' })
       .setTimestamp();
 
     await interaction.reply({ embeds: [embed] });
