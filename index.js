@@ -135,13 +135,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
     let description = '';
     for (let i = 0; i < sortedUsers.length; i++) {
       const [userId, points] = sortedUsers[i];
+      let username = `User ${userId}`;
       try {
         const user = await interaction.client.users.fetch(userId);
-        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-        description += `${medal} **${user.username}** - ${points} points\n`;
+        username = user.username;
       } catch (error) {
         console.log(`Could not fetch user ${userId}: ${error.message}`);
       }
+
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+      description += `${medal} **${username}** - ${points} points\n`;
     }
 
     const embed = new EmbedBuilder()
