@@ -189,13 +189,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Use server-specific display name if available
         username = member.displayName;
       } else {
-        // Fallback to fetching the user directly if they've left the server
+        // Fallback to fetching the user directly, forcing a non-cached API request
         try {
-          const user = await interaction.client.users.fetch(userId);
+          const user = await interaction.client.users.fetch(userId, { force: true });
           username = user.username;
         } catch (error) {
-          console.log(`Could not fetch user ${userId} (not in server): ${error.message}`);
-          username = `(Unknown User)`; // A much better fallback
+          console.log(`Could not fetch user ${userId} (likely deleted): ${error.message}`);
+          username = `(Unknown User)`; // The account is likely deleted
         }
       }
       
