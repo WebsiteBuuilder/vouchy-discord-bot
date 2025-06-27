@@ -174,18 +174,31 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return await interaction.reply('No users have vouch points yet!');
     }
 
+    // Optimized user fetching for leaderboard
+    const userIds = sortedUsers.map(([id]) => id);
+    const guildMembers = await interaction.guild.members.fetch({ user: userIds }).catch(() => new Map());
+
     let description = '';
     for (let i = 0; i < sortedUsers.length; i++) {
       const [userId, points] = sortedUsers[i];
-      let username = `User ${userId}`;
-      try {
-        const user = await interaction.client.users.fetch(userId, { force: true });
-        username = user.username;
-      } catch (error) {
-        console.log(`Could not fetch user ${userId}: ${error.message}`);
-      }
-
+      let username;
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+
+      const member = guildMembers.get(userId);
+      if (member) {
+        // Use server-specific display name if available
+        username = member.displayName;
+      } else {
+        // Fallback to fetching the user directly if they've left the server
+        try {
+          const user = await interaction.client.users.fetch(userId);
+          username = user.username;
+        } catch (error) {
+          console.log(`Could not fetch user ${userId} (not in server): ${error.message}`);
+          username = `(Unknown User)`; // A much better fallback
+        }
+      }
+      
       description += `${medal} **${username}** - ${points} points\n`;
     }
 
