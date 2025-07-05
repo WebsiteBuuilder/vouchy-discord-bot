@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Events, EmbedBuilder, PermissionFlagsBits, AttachmentBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Events, EmbedBuilder, PermissionFlagsBits, AttachmentBuilder, Partials } = require('discord.js');
 const storage = require('./storage.js');
 const sharp = require('sharp');
 require('dotenv').config();
@@ -9,7 +9,13 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences,
   ],
+  partials: [
+    Partials.Channel,
+    Partials.Message,
+    Partials.GuildMember,
+  ]
 });
 
 // Configuration
@@ -361,57 +367,83 @@ That's it! Our bot will automatically see your vouch, post a watermarked copy of
     return await handleHotkeyList(interaction);
   }
   else if (commandName === 'open' || commandName === 'close') {
+    console.log(`🏪 Received ${commandName} command from ${interaction.user.tag}`);
+    
     if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+      console.log(`❌ ${interaction.user.tag} lacks admin permissions`);
       return interaction.reply({ content: '❌ You need administrator permissions to use this command.', ephemeral: true });
     }
 
+    // Defer the reply since we'll be making channel updates
+    await interaction.deferReply({ ephemeral: true });
+    console.log(`⏳ Deferred reply for ${commandName} command`);
+
     try {
       // Get the channels
+      console.log('🔍 Fetching status and order channels...');
       const statusChannel = await interaction.guild.channels.fetch('1379853441819480194');
       const orderChannel = await interaction.guild.channels.fetch('1379887115143479466');
 
       if (!statusChannel || !orderChannel) {
-        return interaction.reply({
+        console.log('❌ Could not find one or both channels');
+        return interaction.editReply({
           content: '❌ Could not find the status or order channels.',
           ephemeral: true
         });
       }
 
-      if (commandName === 'open') {
-        // Update status channel name with green emojis
-        await statusChannel.setName('🟢-OPEN-🟢');
+      console.log('✅ Found both channels');
 
-        // Make order channel visible to everyone
+      if (commandName === 'open') {
+        console.log('🔄 Setting status channel name to OPEN...');
+        await statusChannel.setName('🟢-OPEN-🟢');
+        console.log('✅ Status channel name updated');
+
+        console.log('🔄 Making order channel visible...');
         await orderChannel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
           ViewChannel: true
         });
+        console.log('✅ Order channel visibility updated');
 
-        await interaction.reply({
+        await interaction.editReply({
           content: '✅ Store opened successfully!\n• Status channel updated: 🟢-OPEN-🟢\n• #orderhere is now visible to everyone',
           ephemeral: true
         });
+        console.log('✅ Open command completed successfully');
 
       } else {
-        // Update status channel name
+        console.log('🔄 Setting status channel name to CLOSED...');
         await statusChannel.setName('🔴-CLOSED-🔴');
+        console.log('✅ Status channel name updated');
 
-        // Hide order channel from everyone
+        console.log('🔄 Hiding order channel...');
         await orderChannel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
           ViewChannel: false
         });
+        console.log('✅ Order channel visibility updated');
 
-        await interaction.reply({
+        await interaction.editReply({
           content: '✅ Store closed successfully!\n• Status channel updated: 🔴-CLOSED-🔴\n• #orderhere is now hidden from everyone',
           ephemeral: true
         });
+        console.log('✅ Close command completed successfully');
       }
 
     } catch (error) {
-      console.error('Error in store command:', error);
-      await interaction.reply({
-        content: `❌ An error occurred: ${error.message}`,
-        ephemeral: true
-      });
+      console.error('❌ Error in store command:', error);
+      try {
+        await interaction.editReply({
+          content: `❌ An error occurred: ${error.message}\nPlease check if the bot has the required permissions.`,
+          ephemeral: true
+        });
+      } catch (replyError) {
+        console.error('❌ Failed to send error message:', replyError);
+        // Try to send a new reply if editing failed
+        await interaction.followUp({
+          content: '❌ An error occurred while processing the command.',
+          ephemeral: true
+        }).catch(console.error);
+      }
     }
   }
   else if (commandName === 'reload-points') {
