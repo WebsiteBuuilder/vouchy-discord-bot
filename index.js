@@ -138,6 +138,14 @@ client.on(Events.MessageCreate, async (message) => {
   try {
     await message.reply(replyPayload);
     console.log(`✅ Sent detailed vouch confirmation to ${message.author.username}`);
+    
+    // Delete the original message after successful processing
+    try {
+      await message.delete();
+      console.log(`🗑️ Deleted original vouch message from ${message.author.username}`);
+    } catch (deleteError) {
+      console.log(`❌ Could not delete original message: ${deleteError.message}`);
+    }
   } catch (error) {
     console.log(`❌ Could not send vouch confirmation reply: ${error.message}`);
     // Fallback to a simple reaction if the reply fails
@@ -729,19 +737,43 @@ async function createWatermark(imageBuffer, watermarkText, iconBuffer) {
   const meta = await img.metadata();
   const width = meta.width || 512;
   const height = meta.height || 512;
-  const fontSize = Math.max(20, Math.round(width * 0.04));
+  const fontSize = Math.max(24, Math.round(width * 0.05));
 
-  // SVG for text watermark
-  const textSvg = Buffer.from(
-    `<svg width="${width}" height="${height}">
-       <text x="${width - 10}" y="${height - 10}" font-size="${fontSize}" font-family="Arial" fill="white" stroke="black" stroke-width="2" text-anchor="end">${watermarkText}</text>
+  // Create a full-page transparent watermark pattern
+  const pattern = [];
+  const spacing = Math.round(width * 0.25); // Space between watermarks
+  
+  // Calculate how many watermarks fit horizontally and vertically
+  const cols = Math.ceil(width / spacing);
+  const rows = Math.ceil(height / spacing);
+  
+  // Create repeating pattern across the entire image
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const x = col * spacing;
+      const y = row * spacing + fontSize; // Offset by font size so text doesn't get cut off
+      
+      // Alternate between normal and rotated text for better coverage
+      const rotation = (row + col) % 2 === 0 ? 0 : -15;
+      
+      pattern.push(`<text x="${x}" y="${y}" font-size="${fontSize}" font-family="Arial Black" 
+                    fill="rgba(255,255,255,0.15)" stroke="rgba(0,0,0,0.1)" stroke-width="1" 
+                    text-anchor="start" transform="rotate(${rotation} ${x} ${y})">${watermarkText}</text>`);
+    }
+  }
+
+  // SVG for full-page transparent watermark
+  const fullPageSvg = Buffer.from(
+    `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+       ${pattern.join('')}
      </svg>`
   );
 
-  const composites = [{ input: textSvg, gravity: 'southeast' }];
+  const composites = [{ input: fullPageSvg, blend: 'overlay' }];
 
+  // Add corner icon if provided
   if (iconBuffer) {
-    const iconSize = Math.round(width * 0.1);
+    const iconSize = Math.round(width * 0.08);
     const resizedIcon = await sharp(iconBuffer).resize(iconSize, iconSize).png().toBuffer();
     composites.push({ input: resizedIcon, gravity: 'southwest' });
   }
