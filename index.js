@@ -738,11 +738,11 @@ async function createWatermark(imageBuffer, watermarkText) {
   const width = meta.width || 512;
   const height = meta.height || 512;
   const fontSize = Math.max( Math.round(width * 0.25), 100 ); // 25% of width, at least 100px
-
+ 
   // Build SVG with inline attributes for maximum compatibility
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <text x="50%" y="50%" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" 
-            fill="white" fill-opacity="0.4" stroke="black" stroke-opacity="0.6" stroke-width="4" 
+      <text x="50%" y="50%" font-family="sans-serif" font-size="${fontSize}" 
+            fill="white" fill-opacity="1" stroke="black" stroke-opacity="0.8" stroke-width="6" 
             text-anchor="middle" dominant-baseline="middle" transform="rotate(-25 ${width/2} ${height/2})">
         ${watermarkText}
       </text>
