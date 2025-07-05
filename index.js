@@ -740,22 +740,22 @@ async function createWatermark(imageBuffer, watermarkText) {
 
   // Dynamic sizing
   const base = Math.min(width, height);
-  const fontSize = Math.max(Math.round(base * 0.1), 60); // 10% of small dimension
-  const spacing = fontSize * 3; // distance between repeated texts
+  const fontSize = Math.max(Math.round(base * 0.15), 80); // 15% of smaller dimension, min 80px
+  const spacing = Math.round(fontSize * 2.5); // tighter grid
 
-  // Build repeated pattern SVG
+  // Build repeated pattern SVG with orange color
   let texts = '';
   const cols = Math.ceil(width / spacing) + 1;
   const rows = Math.ceil(height / spacing) + 1;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const x = c * spacing;
+      const x = c * spacing + (r % 2 === 0 ? spacing/2 : 0); // offset every other row
       const y = r * spacing;
-      texts += `<text x="${x}" y="${y}" transform="rotate(-30 ${x} ${y})" >${watermarkText}</text>`;
+      texts += `<text x="${x}" y="${y}" transform="rotate(-30 ${x} ${y})">${watermarkText}</text>`;
     }
   }
 
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}' style='font-family:sans-serif;font-size:${fontSize}px;fill:white;fill-opacity:0.25;'>${texts}</svg>`;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}' style='font-family:sans-serif;font-size:${fontSize}px;fill:#FFA500;fill-opacity:0.4;stroke:black;stroke-opacity:0.35;stroke-width:${Math.max(2, Math.round(fontSize*0.04))};'>${texts}</svg>`;
 
   const result = await img.composite([{ input: Buffer.from(svg), blend:'over' }]).toBuffer();
   return result;
