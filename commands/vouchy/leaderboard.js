@@ -28,33 +28,60 @@ module.exports = {
         
         return await interaction.editReply({ embeds: [embed] });
       }
+
+      // Fetch all user data first
+      const userPromises = leaderboard.map(async entry => {
+        try {
+          const user = await interaction.client.users.fetch(entry.userId);
+          return {
+            ...entry,
+            username: user.username,
+            displayName: user.displayName || user.username,
+            avatar: user.displayAvatarURL()
+          };
+        } catch (error) {
+          console.error(`Error fetching user ${entry.userId}:`, error);
+          return {
+            ...entry,
+            username: 'Unknown User',
+            displayName: 'Unknown User',
+            avatar: null
+          };
+        }
+      });
+
+      // Wait for all user data to be fetched
+      const usersData = await Promise.all(userPromises);
       
       let description = '';
-      for (let i = 0; i < leaderboard.length; i++) {
-        const user = leaderboard[i];
+      for (let i = 0; i < usersData.length; i++) {
+        const user = usersData[i];
         const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-        description += `${medal} <@${user.userId}> - **${user.points}** points\n`;
+        description += `${medal} **${user.displayName}** - **${user.points}** points\n`;
       }
       
       const embed = new EmbedBuilder()
         .setTitle('🏆 Points Leaderboard')
         .setDescription(description)
         .setColor('#FFD700')
-        .setFooter({ text: `Top ${leaderboard.length} players` })
+        .setFooter({ text: `Top ${usersData.length} players` })
         .setTimestamp();
+
+      // If we have a top player with an avatar, use it as thumbnail
+      if (usersData[0]?.avatar) {
+        embed.setThumbnail(usersData[0].avatar);
+      }
       
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
       console.error('Error in leaderboard command:', error);
       
-      // If we haven't replied yet, send an error message
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ 
           content: 'There was an error while fetching the leaderboard. Please try again later.',
           ephemeral: true 
         });
       } else {
-        // If we already deferred, edit the reply
         await interaction.editReply({ 
           content: 'There was an error while fetching the leaderboard. Please try again later.',
           ephemeral: true 
