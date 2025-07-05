@@ -737,23 +737,27 @@ async function createWatermark(imageBuffer, watermarkText) {
   const meta = await img.metadata();
   const width = meta.width || 512;
   const height = meta.height || 512;
+
+  // Dynamic sizing
   const base = Math.min(width, height);
-  const fontSize = Math.max(Math.round(base * 0.4), 150); // 40% of smallest dimension, min 150px
-  const strokeW = Math.max(Math.round(base * 0.02), 6);
+  const fontSize = Math.max(Math.round(base * 0.1), 60); // 10% of small dimension
+  const spacing = fontSize * 3; // distance between repeated texts
 
-  // Build SVG with inline attributes for maximum compatibility
-  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <text x="50%" y="50%" font-family="sans-serif" font-size="${fontSize}" 
-            fill="white" fill-opacity="0.9" stroke="black" stroke-opacity="0.8" stroke-width="${strokeW}" 
-            text-anchor="middle" dominant-baseline="middle" transform="rotate(-25 ${width/2} ${height/2})">
-        ${watermarkText}
-      </text>
-    </svg>`;
+  // Build repeated pattern SVG
+  let texts = '';
+  const cols = Math.ceil(width / spacing) + 1;
+  const rows = Math.ceil(height / spacing) + 1;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = c * spacing;
+      const y = r * spacing;
+      texts += `<text x="${x}" y="${y}" transform="rotate(-30 ${x} ${y})" >${watermarkText}</text>`;
+    }
+  }
 
-  const result = await img
-    .composite([{ input: Buffer.from(svg), blend: 'over' }])
-    .toBuffer();
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}' style='font-family:sans-serif;font-size:${fontSize}px;fill:white;fill-opacity:0.25;'>${texts}</svg>`;
 
+  const result = await img.composite([{ input: Buffer.from(svg), blend:'over' }]).toBuffer();
   return result;
 }
 
