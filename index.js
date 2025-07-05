@@ -738,24 +738,17 @@ async function createWatermark(imageBuffer, watermarkText) {
   const width = meta.width || 512;
   const height = meta.height || 512;
 
-  // Dynamic sizing
+  // Single massive centered text watermark
   const base = Math.min(width, height);
-  const fontSize = Math.max(Math.round(base * 0.15), 80); // 15% of smaller dimension, min 80px
-  const spacing = Math.round(fontSize * 2.5); // tighter grid
+  const fontSize = Math.max(Math.round(base * 0.5), 150); // 50% of smaller side, min 150px
 
-  // Build repeated pattern SVG with orange color
-  let texts = '';
-  const cols = Math.ceil(width / spacing) + 1;
-  const rows = Math.ceil(height / spacing) + 1;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const x = c * spacing + (r % 2 === 0 ? spacing/2 : 0); // offset every other row
-      const y = r * spacing;
-      texts += `<text x="${x}" y="${y}" transform="rotate(-30 ${x} ${y})">${watermarkText}</text>`;
-    }
-  }
-
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}' style='font-family:sans-serif;font-size:${fontSize}px;fill:#FFA500;fill-opacity:0.4;'>${texts}</svg>`;
+  const svg = `
+    <svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'>
+      <text x='50%' y='50%' text-anchor='middle' dominant-baseline='middle'
+            font-family='sans-serif' font-size='${fontSize}px'
+            fill='#FFA500' fill-opacity='0.35'
+            transform='rotate(-25 ${width/2} ${height/2})'>${watermarkText}</text>
+    </svg>`;
 
   const result = await img.composite([{ input: Buffer.from(svg), blend:'over' }]).toBuffer();
   return result;
