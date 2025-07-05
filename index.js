@@ -120,7 +120,7 @@ client.on(Events.MessageCreate, async (message) => {
       if (!looksLikeImage) continue;
 
       const imgBuf = await fetchBuffer(attachment.url);
-      const wmBuf = await createWatermark(imgBuf, 'Quikeats', iconBuffer);
+      const wmBuf = await createWatermark(imgBuf, 'Quikeats');
       watermarkedFiles.push(new AttachmentBuilder(wmBuf, { name: `wm_${attachment.name || 'image.jpg'}` }));
     }
 
@@ -732,55 +732,27 @@ async function fetchBuffer(url) {
   return Buffer.from(arrayBuffer);
 }
 
-async function createWatermark(imageBuffer, watermarkText, iconBuffer) {
-  try {
-    const img = sharp(imageBuffer);
-    const meta = await img.metadata();
-    const width = meta.width || 512;
-    const height = meta.height || 512;
-    
-    // Create a simple text overlay using Sharp's text() method
-    const fontSize = Math.max(80, Math.round(width * 0.2));
-    
-    // Create the watermark text as a separate image
-    const textSvg = `
-      <svg width="${width}" height="${height}">
-        <defs>
-          <style>
-            .watermark-text {
-              font-family: Arial Black, sans-serif;
-              font-size: ${fontSize}px;
-              font-weight: 900;
-              fill: rgba(255, 255, 255, 0.8);
-              stroke: rgba(0, 0, 0, 0.5);
-              stroke-width: 3px;
-              text-anchor: middle;
-              dominant-baseline: middle;
-            }
-          </style>
-        </defs>
-        <text x="${width/2}" y="${height/2}" class="watermark-text" transform="rotate(-20 ${width/2} ${height/2})">
-          ${watermarkText}
-        </text>
-      </svg>
-    `;
-    
-    const textBuffer = Buffer.from(textSvg);
-    
-    // Composite the text over the image
-    const result = await img
-      .composite([
-        { input: textBuffer, blend: 'over' }
-      ])
-      .jpeg({ quality: 90 })
-      .toBuffer();
-    
-    return result;
-  } catch (error) {
-    console.error('Watermark creation failed:', error);
-    // Return original image if watermarking fails
-    return imageBuffer;
-  }
+async function createWatermark(imageBuffer, watermarkText) {
+  const img = sharp(imageBuffer);
+  const meta = await img.metadata();
+  const width = meta.width || 512;
+  const height = meta.height || 512;
+  const fontSize = Math.max( Math.round(width * 0.25), 100 ); // 25% of width, at least 100px
+
+  // Build SVG with inline attributes for maximum compatibility
+  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <text x="50%" y="50%" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" 
+            fill="white" fill-opacity="0.4" stroke="black" stroke-opacity="0.6" stroke-width="4" 
+            text-anchor="middle" dominant-baseline="middle" transform="rotate(-25 ${width/2} ${height/2})">
+        ${watermarkText}
+      </text>
+    </svg>`;
+
+  const result = await img
+    .composite([{ input: Buffer.from(svg), blend: 'over' }])
+    .toBuffer();
+
+  return result;
 }
 
 // Log the token being used (but hide most of it)
