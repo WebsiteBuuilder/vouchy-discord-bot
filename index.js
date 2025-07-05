@@ -737,39 +737,23 @@ async function createWatermark(imageBuffer, watermarkText, iconBuffer) {
   const meta = await img.metadata();
   const width = meta.width || 512;
   const height = meta.height || 512;
-  const fontSize = Math.max(24, Math.round(width * 0.05));
+  const fontSize = Math.max(60, Math.round(width * 0.15)); // Much larger font size
 
-  // Create a full-page transparent watermark pattern
-  const pattern = [];
-  const spacing = Math.round(width * 0.25); // Space between watermarks
-  
-  // Calculate how many watermarks fit horizontally and vertically
-  const cols = Math.ceil(width / spacing);
-  const rows = Math.ceil(height / spacing);
-  
-  // Create repeating pattern across the entire image
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const x = col * spacing;
-      const y = row * spacing + fontSize; // Offset by font size so text doesn't get cut off
-      
-      // Alternate between normal and rotated text for better coverage
-      const rotation = (row + col) % 2 === 0 ? 0 : -15;
-      
-      pattern.push(`<text x="${x}" y="${y}" font-size="${fontSize}" font-family="Arial Black" 
-                    fill="rgba(255,255,255,0.15)" stroke="rgba(0,0,0,0.1)" stroke-width="1" 
-                    text-anchor="start" transform="rotate(${rotation} ${x} ${y})">${watermarkText}</text>`);
-    }
-  }
+  // Create a large centered watermark
+  const centerX = width / 2;
+  const centerY = height / 2;
 
-  // SVG for full-page transparent watermark
-  const fullPageSvg = Buffer.from(
+  // SVG for large centered transparent watermark
+  const centerWatermarkSvg = Buffer.from(
     `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-       ${pattern.join('')}
+       <text x="${centerX}" y="${centerY}" font-size="${fontSize}" font-family="Arial Black" 
+             fill="rgba(255,255,255,0.25)" stroke="rgba(0,0,0,0.15)" stroke-width="3" 
+             text-anchor="middle" dominant-baseline="middle" 
+             transform="rotate(-15 ${centerX} ${centerY})">${watermarkText}</text>
      </svg>`
   );
 
-  const composites = [{ input: fullPageSvg, blend: 'overlay' }];
+  const composites = [{ input: centerWatermarkSvg, blend: 'overlay' }];
 
   // Add corner icon if provided
   if (iconBuffer) {
