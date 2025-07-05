@@ -27,6 +27,7 @@ class VouchyStorage extends EventEmitter {
         
         // In-memory data
         this.points = new Map();
+        this.usernames = new Map(); // Add username storage
         this.games = new Map();
         this.hotkeys = new Map();
         this.rouletteTables = new Map();
@@ -234,6 +235,11 @@ class VouchyStorage extends EventEmitter {
         this.points.set(userId, Math.max(0, amount));
         this.savePoints();
     }
+
+    // Add method to get stored username
+    getStoredUsername(userId) {
+        return this.usernames.get(userId);
+    }
     
     addPoints(userId, amount) {
         const current = this.getPoints(userId);
@@ -253,9 +259,15 @@ class VouchyStorage extends EventEmitter {
         // Return a plain object so callers can use Object.keys/entries directly.
         return Object.fromEntries(this.points);
     }
+
+    // Add method to get all stored usernames
+    getAllUsernames() {
+        return Object.fromEntries(this.usernames);
+    }
     
     deleteUser(userId) {
         this.points.delete(userId);
+        this.usernames.delete(userId); // Also delete username
         this.savePoints();
     }
     

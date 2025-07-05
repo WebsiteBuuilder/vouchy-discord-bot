@@ -91,7 +91,7 @@ client.on(Events.MessageCreate, async (message) => {
   // Award points to the author (the person providing the vouch)
   const currentPointsAuthor = storage.getPoints(message.author.id);
   const newPointsAuthor = currentPointsAuthor + POINTS_PER_VOUCH;
-  storage.setPoints(message.author.id, newPointsAuthor);
+  storage.setPoints(message.author.id, newPointsAuthor, message.author.username);
 
   console.log(`💰 Awarded ${POINTS_PER_VOUCH} point to ${message.author.username} (${currentPointsAuthor} → ${newPointsAuthor})`);
 
@@ -154,6 +154,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const targetUser = interaction.options.getUser('user') || interaction.user;
     const points = storage.getPoints(targetUser.id);
     
+    // Store the username whenever we see it
+    storage.setPoints(targetUser.id, points, targetUser.username);
+    
     const embed = new EmbedBuilder()
       .setColor(0x00D4AA)
       .setTitle('💰 Vouch Points')
@@ -188,14 +191,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (member) {
         // Use server-specific display name if available
         username = member.displayName;
+        // Store the username for future use
+        storage.setPoints(userId, points, member.displayName);
       } else {
-        // Fallback to fetching the user directly, forcing a non-cached API request
-        try {
-          const user = await interaction.client.users.fetch(userId, { force: true });
-          username = user.username;
-        } catch (error) {
-          console.log(`Could not fetch user ${userId} (likely deleted): ${error.message}`);
-          username = `(Unknown User)`; // The account is likely deleted
+        // Try to get stored username first
+        const storedUsername = storage.getStoredUsername(userId);
+        if (storedUsername) {
+          username = storedUsername;
+        } else {
+          // Fallback to fetching the user directly
+          try {
+            const user = await interaction.client.users.fetch(userId, { force: true });
+            username = user.username;
+            // Store the username for future use
+            storage.setPoints(userId, points, user.username);
+          } catch (error) {
+            console.log(`Could not fetch user ${userId} (likely deleted): ${error.message}`);
+            username = `User-${userId.slice(-4)}`; // Use last 4 digits of ID instead of "Unknown User"
+          }
         }
       }
       
@@ -736,4 +749,8 @@ async function createWatermark(imageBuffer, watermarkText, iconBuffer) {
   return await img.composite(composites).jpeg().toBuffer();
 }
 
-client.login(process.env.DISCORD_TOKEN); 
+// Log the token being used (but hide most of it)
+const token = process.env.DISCORD_TOKEN;
+console.log('Using token:', token ? `${token.slice(0, 10)}...${token.slice(-5)}` : 'NO TOKEN');
+
+client.login(token); 

@@ -2,18 +2,18 @@ const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } = require('disc
 require('dotenv').config();
 
 console.log('DISCORD_TOKEN loaded:', process.env.DISCORD_TOKEN ? 'YES' : 'NO');
-console.log('CLIENT_ID loaded:', (process.env.CLIENT_ID || process.env.DISCORD_CLIENT_ID) ? 'YES' : 'NO');
-console.log('GUILD_ID loaded:', (process.env.GUILD_ID || process.env.DISCORD_GUILD_ID) ? 'YES' : 'NO');
+console.log('DISCORD_CLIENT_ID loaded:', process.env.DISCORD_CLIENT_ID ? 'YES' : 'NO');
+console.log('DISCORD_GUILD_ID loaded:', process.env.DISCORD_GUILD_ID ? 'YES' : 'NO');
 
-const clientId = process.env.CLIENT_ID || process.env.DISCORD_CLIENT_ID;
-const guildId = process.env.GUILD_ID || process.env.DISCORD_GUILD_ID;
+const clientId = process.env.DISCORD_CLIENT_ID;
+const guildId = process.env.DISCORD_GUILD_ID;
 
 if (!process.env.DISCORD_TOKEN || !clientId || !guildId) {
   console.error('Missing environment variables!');
   console.log('Make sure your .env file contains:');
   console.log('DISCORD_TOKEN=your_bot_token_here');
-  console.log('CLIENT_ID=your_client_id_here (or DISCORD_CLIENT_ID)');
-  console.log('GUILD_ID=your_guild_id_here (or DISCORD_GUILD_ID)');
+  console.log('DISCORD_CLIENT_ID=your_client_id_here');
+  console.log('DISCORD_GUILD_ID=your_guild_id_here');
   process.exit(1);
 }
 
