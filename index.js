@@ -755,7 +755,7 @@ async function createWatermark(imageBuffer, watermarkText) {
     }
   }
 
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}' style='font-family:sans-serif;font-size:${fontSize}px;fill:#FFA500;fill-opacity:0.4;stroke:black;stroke-opacity:0.35;stroke-width:${Math.max(2, Math.round(fontSize*0.04))};'>${texts}</svg>`;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}' style='font-family:sans-serif;font-size:${fontSize}px;fill:#FFA500;fill-opacity:0.4;'>${texts}</svg>`;
 
   const result = await img.composite([{ input: Buffer.from(svg), blend:'over' }]).toBuffer();
   return result;
