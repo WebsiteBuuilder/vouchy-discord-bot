@@ -360,81 +360,49 @@ That's it! Our bot will automatically see your vouch, post a watermarked copy of
     return await handleHotkeyList(interaction);
   }
   else if (commandName === 'open' || commandName === 'close') {
-    // Check for admin permission
-    if (!interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: '❌ You need administrator permissions to use this command.', ephemeral: true });
-    }
-
     try {
-      // Get the channels first before deferring
-      const statusChannel = interaction.guild.channels.cache.get('1379853441819480194');
-      const orderChannel = interaction.guild.channels.cache.get('1379887115143479466');
+      // Simple immediate reply to test interaction
+      await interaction.reply({ 
+        content: `Testing ${commandName} command...`, 
+        ephemeral: true 
+      });
+
+      // Get channels
+      const statusChannel = await interaction.guild.channels.fetch('1379853441819480194');
+      const orderChannel = await interaction.guild.channels.fetch('1379887115143479466');
 
       if (!statusChannel || !orderChannel) {
-        return interaction.reply({
-          content: '❌ Could not find the status or order channels.',
+        return await interaction.followUp({
+          content: '❌ Could not find channels',
           ephemeral: true
         });
       }
-
-      // Now defer the reply
-      await interaction.deferReply({ ephemeral: true });
 
       if (commandName === 'open') {
-        // Update status channel name
         await statusChannel.setName('🟢-OPEN-🟢');
-        
-        // Make order channel visible
-        await orderChannel.edit({
-          permissionOverwrites: [
-            {
-              id: interaction.guild.id,
-              allow: ['ViewChannel']
-            }
-          ]
+        await orderChannel.permissionOverwrites.edit(interaction.guild.id, {
+          ViewChannel: true
         });
-
-        return interaction.editReply({
-          content: '✅ Store opened successfully!\n• Status channel updated: 🟢-OPEN-🟢\n• #orderhere is now visible to everyone',
+        await interaction.followUp({
+          content: '✅ Opened!',
           ephemeral: true
         });
-
       } else {
-        // Update status channel name
         await statusChannel.setName('🔴-CLOSED-🔴');
-        
-        // Hide order channel
-        await orderChannel.edit({
-          permissionOverwrites: [
-            {
-              id: interaction.guild.id,
-              deny: ['ViewChannel']
-            }
-          ]
+        await orderChannel.permissionOverwrites.edit(interaction.guild.id, {
+          ViewChannel: false
         });
-
-        return interaction.editReply({
-          content: '✅ Store closed successfully!\n• Status channel updated: 🔴-CLOSED-🔴\n• #orderhere is now hidden from everyone',
+        await interaction.followUp({
+          content: '✅ Closed!',
           ephemeral: true
         });
       }
-
     } catch (error) {
-      console.error('❌ Error in store command:', error);
-      
-      // If we haven't deferred yet, use reply
-      if (!interaction.deferred) {
-        return interaction.reply({
-          content: `❌ An error occurred: ${error.message}\nPlease check if the bot has the required permissions.`,
-          ephemeral: true
-        });
-      }
-      
-      // If we have deferred, use editReply
-      return interaction.editReply({
-        content: `❌ An error occurred: ${error.message}\nPlease check if the bot has the required permissions.`,
+      console.error('Store command error:', error);
+      await interaction.followUp({
+        content: `❌ Error: ${error.message}`,
         ephemeral: true
-      });
+      }).catch(console.error);
     }
   }
   else if (commandName === 'reload-points') {

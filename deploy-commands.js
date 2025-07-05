@@ -127,11 +127,11 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('open')
-    .setDescription('ADMIN: Opens the store, making the order channel public.')
+    .setDescription('Opens the store')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('close')
-    .setDescription('ADMIN: Closes the store, making the order channel private.')
+    .setDescription('Closes the store')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('reload-points')
