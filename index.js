@@ -742,23 +742,25 @@ async function createWatermark(imageBuffer, watermarkText) {
     const width = meta.width || 512;
     const height = meta.height || 512;
     
-    // Single massive centered text watermark
+    // Calculate font size - 40% of smaller dimension
     const base = Math.min(width, height);
-    const fontSize = Math.max(Math.round(base * 0.5), 150); // 50% of smaller side, min 150px
+    const fontSize = Math.max(Math.round(base * 0.4), 120);
     console.log('📝 Watermark settings:', { base, fontSize, watermarkText });
 
-    const svg = `
-      <svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'>
-        <text x='50%' y='50%' text-anchor='middle' dominant-baseline='middle'
-              font-family='Arial Black, sans-serif' font-size='${fontSize}px'
-              fill='#FFA500' fill-opacity='0.35'
-              transform='rotate(-25 ${width/2} ${height/2})'>${watermarkText}</text>
-      </svg>`;
+    // Simple SVG with basic text positioning
+    const svg = `<svg width="${width}" height="${height}">
+      <text x="${width/2}" y="${height/2}" 
+            font-family="Arial" font-size="${fontSize}" 
+            fill="orange" opacity="0.6" 
+            text-anchor="middle" dominant-baseline="middle">
+        ${watermarkText}
+      </text>
+    </svg>`;
     
     console.log('🎨 SVG created, length:', svg.length);
     
     const result = await img
-      .composite([{ input: Buffer.from(svg), blend: 'over' }])
+      .composite([{ input: Buffer.from(svg) }])
       .jpeg({ quality: 90 })
       .toBuffer();
     
