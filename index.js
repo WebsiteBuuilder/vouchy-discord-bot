@@ -746,7 +746,7 @@ async function createWatermark(imageBuffer, watermarkText) {
     <svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'>
       <text x='50%' y='50%' text-anchor='middle' dominant-baseline='middle'
             font-family='sans-serif' font-size='${fontSize}px'
-            fill='#FFA500' fill-opacity='0.35'
+            fill='#FFA500' fill-opacity='0.15'
             transform='rotate(-25 ${width/2} ${height/2})'>${watermarkText}</text>
     </svg>`;
 
