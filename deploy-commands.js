@@ -3,14 +3,17 @@ require('dotenv').config();
 
 console.log('DISCORD_TOKEN loaded:', process.env.DISCORD_TOKEN ? 'YES' : 'NO');
 console.log('CLIENT_ID loaded:', (process.env.CLIENT_ID || process.env.DISCORD_CLIENT_ID) ? 'YES' : 'NO');
+console.log('GUILD_ID loaded:', (process.env.GUILD_ID || process.env.DISCORD_GUILD_ID) ? 'YES' : 'NO');
 
 const clientId = process.env.CLIENT_ID || process.env.DISCORD_CLIENT_ID;
+const guildId = process.env.GUILD_ID || process.env.DISCORD_GUILD_ID;
 
-if (!process.env.DISCORD_TOKEN || !clientId) {
+if (!process.env.DISCORD_TOKEN || !clientId || !guildId) {
   console.error('Missing environment variables!');
   console.log('Make sure your .env file contains:');
   console.log('DISCORD_TOKEN=your_bot_token_here');
   console.log('CLIENT_ID=your_client_id_here (or DISCORD_CLIENT_ID)');
+  console.log('GUILD_ID=your_guild_id_here (or DISCORD_GUILD_ID)');
   process.exit(1);
 }
 
@@ -150,14 +153,14 @@ const commands = [
     )
 ];
 
-const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
   try {
     console.log('Started refreshing application (/) commands.');
 
     await rest.put(
-      Routes.applicationCommands(clientId),
+      Routes.applicationGuildCommands(clientId, guildId),
       { body: commands },
     );
 
