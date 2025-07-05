@@ -737,23 +737,23 @@ async function createWatermark(imageBuffer, watermarkText, iconBuffer) {
   const meta = await img.metadata();
   const width = meta.width || 512;
   const height = meta.height || 512;
-  const fontSize = Math.max(60, Math.round(width * 0.15)); // Much larger font size
+  const fontSize = Math.max(80, Math.round(width * 0.2)); // Even bigger font size
 
   // Create a large centered watermark
   const centerX = width / 2;
   const centerY = height / 2;
 
-  // SVG for large centered transparent watermark
+  // SVG for large centered semi-transparent watermark
   const centerWatermarkSvg = Buffer.from(
     `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
        <text x="${centerX}" y="${centerY}" font-size="${fontSize}" font-family="Arial Black" 
-             fill="rgba(255,255,255,0.25)" stroke="rgba(0,0,0,0.15)" stroke-width="3" 
+             fill="rgba(255,255,255,0.6)" stroke="rgba(0,0,0,0.3)" stroke-width="4" 
              text-anchor="middle" dominant-baseline="middle" 
-             transform="rotate(-15 ${centerX} ${centerY})">${watermarkText}</text>
+             transform="rotate(-20 ${centerX} ${centerY})">${watermarkText}</text>
      </svg>`
   );
 
-  const composites = [{ input: centerWatermarkSvg, blend: 'overlay' }];
+  const composites = [{ input: centerWatermarkSvg }]; // Remove blend mode for more visibility
 
   // Add corner icon if provided
   if (iconBuffer) {
