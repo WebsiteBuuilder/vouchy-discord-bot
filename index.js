@@ -360,83 +360,81 @@ That's it! Our bot will automatically see your vouch, post a watermarked copy of
     return await handleHotkeyList(interaction);
   }
   else if (commandName === 'open' || commandName === 'close') {
-    console.log(`🏪 Received ${commandName} command from ${interaction.user.tag}`);
-    
-    if (!interaction.member.permissions.has('ADMINISTRATOR')) {
-      console.log(`❌ ${interaction.user.tag} lacks admin permissions`);
+    // Check for admin permission
+    if (!interaction.memberPermissions.has(PermissionFlagsBits.Administrator)) {
       return interaction.reply({ content: '❌ You need administrator permissions to use this command.', ephemeral: true });
     }
 
-    // Defer the reply since we'll be making channel updates
-    await interaction.deferReply({ ephemeral: true });
-    console.log(`⏳ Deferred reply for ${commandName} command`);
-
     try {
-      // Get the channels
-      console.log('🔍 Fetching status and order channels...');
-      const statusChannel = await interaction.guild.channels.fetch('1379853441819480194');
-      const orderChannel = await interaction.guild.channels.fetch('1379887115143479466');
+      // Get the channels first before deferring
+      const statusChannel = interaction.guild.channels.cache.get('1379853441819480194');
+      const orderChannel = interaction.guild.channels.cache.get('1379887115143479466');
 
       if (!statusChannel || !orderChannel) {
-        console.log('❌ Could not find one or both channels');
-        return interaction.editReply({
+        return interaction.reply({
           content: '❌ Could not find the status or order channels.',
           ephemeral: true
         });
       }
 
-      console.log('✅ Found both channels');
+      // Now defer the reply
+      await interaction.deferReply({ ephemeral: true });
 
       if (commandName === 'open') {
-        console.log('🔄 Setting status channel name to OPEN...');
+        // Update status channel name
         await statusChannel.setName('🟢-OPEN-🟢');
-        console.log('✅ Status channel name updated');
-
-        console.log('🔄 Making order channel visible...');
-        await orderChannel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
-          ViewChannel: true
+        
+        // Make order channel visible
+        await orderChannel.edit({
+          permissionOverwrites: [
+            {
+              id: interaction.guild.id,
+              allow: ['ViewChannel']
+            }
+          ]
         });
-        console.log('✅ Order channel visibility updated');
 
-        await interaction.editReply({
+        return interaction.editReply({
           content: '✅ Store opened successfully!\n• Status channel updated: 🟢-OPEN-🟢\n• #orderhere is now visible to everyone',
           ephemeral: true
         });
-        console.log('✅ Open command completed successfully');
 
       } else {
-        console.log('🔄 Setting status channel name to CLOSED...');
+        // Update status channel name
         await statusChannel.setName('🔴-CLOSED-🔴');
-        console.log('✅ Status channel name updated');
-
-        console.log('🔄 Hiding order channel...');
-        await orderChannel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
-          ViewChannel: false
+        
+        // Hide order channel
+        await orderChannel.edit({
+          permissionOverwrites: [
+            {
+              id: interaction.guild.id,
+              deny: ['ViewChannel']
+            }
+          ]
         });
-        console.log('✅ Order channel visibility updated');
 
-        await interaction.editReply({
+        return interaction.editReply({
           content: '✅ Store closed successfully!\n• Status channel updated: 🔴-CLOSED-🔴\n• #orderhere is now hidden from everyone',
           ephemeral: true
         });
-        console.log('✅ Close command completed successfully');
       }
 
     } catch (error) {
       console.error('❌ Error in store command:', error);
-      try {
-        await interaction.editReply({
+      
+      // If we haven't deferred yet, use reply
+      if (!interaction.deferred) {
+        return interaction.reply({
           content: `❌ An error occurred: ${error.message}\nPlease check if the bot has the required permissions.`,
           ephemeral: true
         });
-      } catch (replyError) {
-        console.error('❌ Failed to send error message:', replyError);
-        // Try to send a new reply if editing failed
-        await interaction.followUp({
-          content: '❌ An error occurred while processing the command.',
-          ephemeral: true
-        }).catch(console.error);
       }
+      
+      // If we have deferred, use editReply
+      return interaction.editReply({
+        content: `❌ An error occurred: ${error.message}\nPlease check if the bot has the required permissions.`,
+        ephemeral: true
+      });
     }
   }
   else if (commandName === 'reload-points') {
