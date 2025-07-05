@@ -544,37 +544,10 @@ class VouchyStorage extends EventEmitter {
     }
 
     clearAllPoints() {
-        try {
-            const userCount = this.points.size;
-            const totalPoints = Array.from(this.points.values()).reduce((a, b) => a + b, 0);
-            
-            // Clear all points
-            this.points.clear();
-            this.games.clear();
-            
-            // Save empty points to files
-            const emptyData = JSON.stringify({}, null, 2);
-            fs.writeFileSync(this.pointsFile, emptyData);
-            fs.writeFileSync(this.backupFile, emptyData);
-            
-            // Update metadata
-            const metadata = {
-                timestamp: Date.now(),
-                userCount: 0,
-                totalPoints: 0,
-                version: "bulletproof-v3",
-                action: "cleared_all_points"
-            };
-            fs.writeFileSync(path.join(this.baseDir, 'points-metadata.json'), JSON.stringify(metadata, null, 2));
-            
-            console.log(`🗑️ Cleared all points: ${userCount} users, ${totalPoints} total points`);
-            this.emit('reload', this.points);
-            
-            return { success: true, clearedUsers: userCount, clearedPoints: totalPoints };
-        } catch (error) {
-            console.error('❌ Clear points failed:', error);
-            return { success: false, error: error.message };
-        }
+        this.points = new Map();
+        this.savePoints();
+        this.emit('points-cleared');
+        console.log('🧹 All points cleared from the system');
     }
 }
 

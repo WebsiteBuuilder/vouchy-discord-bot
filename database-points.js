@@ -178,6 +178,51 @@ async function deleteUser(userId) {
   }
 }
 
+async function saveAllPoints() {
+  const points = storage.getAllPoints();
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    // Clear existing points
+    await client.query('DELETE FROM user_points');
+    
+    // Insert all points
+    for (const [userId, amount] of Object.entries(points)) {
+      await client.query(
+        'INSERT INTO user_points (user_id, points) VALUES ($1, $2)',
+        [userId, amount]
+      );
+    }
+    
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function clearAllPoints() {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM user_points');
+    await client.query('COMMIT');
+    
+    // Clear local storage too
+    storage.clearAllPoints();
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // Initialize database on module load
 initDatabase();
 
@@ -189,5 +234,7 @@ module.exports = {
   hasEnoughPoints,
   getLeaderboard,
   deleteUser,
-  initDatabase
+  initDatabase,
+  saveAllPoints,
+  clearAllPoints,
 }; 

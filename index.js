@@ -8,6 +8,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
   ],
 });
 
@@ -116,7 +117,7 @@ client.on(Events.MessageCreate, async (message) => {
     const watermarkedFiles = [];
 
     for (const attachment of message.attachments.values()) {
-      const looksLikeImage = attachment.contentType?.startsWith('image/') || attachment.name?.match(/\.(jpg|jpeg|png|gif|webp|bmp|tiff)$/i);
+      const looksLikeImage = attachment.contentType?.startsWith('image/') || attachment.name?.match(/\.(jpg|jpeg|png|gif|webp|bmp|tiff|svg)$/i) || attachment.url?.includes('cdn.discordapp.com');
       if (!looksLikeImage) continue;
 
       const imgBuf = await fetchBuffer(attachment.url);
@@ -359,11 +360,59 @@ That's it! Our bot will automatically see your vouch, post a watermarked copy of
   else if (commandName === 'hotkey-list') {
     return await handleHotkeyList(interaction);
   }
-  else if (commandName === 'open') {
-    return await handleStoreOpen(interaction);
-  }
-  else if (commandName === 'close') {
-    return await handleStoreClose(interaction);
+  else if (commandName === 'open' || commandName === 'close') {
+    if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+      return interaction.reply({ content: '❌ You need administrator permissions to use this command.', ephemeral: true });
+    }
+
+    try {
+      // Get the channels
+      const statusChannel = await interaction.guild.channels.fetch('1379853441819480194');
+      const orderChannel = await interaction.guild.channels.fetch('1379887115143479466');
+
+      if (!statusChannel || !orderChannel) {
+        return interaction.reply({
+          content: '❌ Could not find the status or order channels.',
+          ephemeral: true
+        });
+      }
+
+      if (commandName === 'open') {
+        // Update status channel name with green emojis
+        await statusChannel.setName('🟢-OPEN-🟢');
+
+        // Make order channel visible to everyone
+        await orderChannel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
+          ViewChannel: true
+        });
+
+        await interaction.reply({
+          content: '✅ Store opened successfully!\n• Status channel updated: 🟢-OPEN-🟢\n• #orderhere is now visible to everyone',
+          ephemeral: true
+        });
+
+      } else {
+        // Update status channel name
+        await statusChannel.setName('🔴-CLOSED-🔴');
+
+        // Hide order channel from everyone
+        await orderChannel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
+          ViewChannel: false
+        });
+
+        await interaction.reply({
+          content: '✅ Store closed successfully!\n• Status channel updated: 🔴-CLOSED-🔴\n• #orderhere is now hidden from everyone',
+          ephemeral: true
+        });
+      }
+
+    } catch (error) {
+      console.error('Error in store command:', error);
+      await interaction.reply({
+        content: `❌ An error occurred: ${error.message}`,
+        ephemeral: true
+      });
+    }
   }
   else if (commandName === 'reload-points') {
     return await handleReloadPoints(interaction);

@@ -135,22 +135,7 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('reload-points')
-    .setDescription('🔄 Reloads points from the best available backup file (Admin only)'),
-  new SlashCommandBuilder()
-    .setName('restore-backup')
-    .setDescription('🗄️ Force restore points from a specific backup file (Admin only)')
-    .addStringOption(option =>
-      option
-        .setName('filename')
-        .setDescription('The backup file to restore from')
-        .setRequired(true)
-        .addChoices(
-          { name: 'Latest Backup (points-backup.json)', value: 'points-backup.json' },
-          { name: 'Recovery (points-recovery.json)', value: 'points-recovery.json' },
-          { name: 'Emergency (points-emergency.json)', value: 'points-emergency.json' },
-          { name: 'Metadata (points-metadata.json)', value: 'points-metadata.json' }
-        )
-    )
+    .setDescription('🔄 Reloads points from the best available backup file (Admin only)')
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
