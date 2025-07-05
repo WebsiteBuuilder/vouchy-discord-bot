@@ -361,45 +361,50 @@ That's it! Our bot will automatically see your vouch, post a watermarked copy of
   }
   else if (commandName === 'open' || commandName === 'close') {
     try {
-      // Simple immediate reply to test interaction
-      await interaction.reply({ 
-        content: `Testing ${commandName} command...`, 
-        ephemeral: true 
-      });
-
-      // Get channels
-      const statusChannel = await interaction.guild.channels.fetch('1379853441819480194');
-      const orderChannel = await interaction.guild.channels.fetch('1379887115143479466');
+      // Get channels from cache first
+      const statusChannel = interaction.guild.channels.cache.get('1379853441819480194');
+      const orderChannel = interaction.guild.channels.cache.get('1379887115143479466');
 
       if (!statusChannel || !orderChannel) {
-        return await interaction.followUp({
-          content: '❌ Could not find channels',
+        return await interaction.reply({
+          content: '❌ Could not find required channels',
           ephemeral: true
         });
       }
 
+      // Start all operations in parallel
+      const operations = [];
+
       if (commandName === 'open') {
-        await statusChannel.setName('🟢-OPEN-🟢');
-        await orderChannel.permissionOverwrites.edit(interaction.guild.id, {
-          ViewChannel: true
-        });
-        await interaction.followUp({
-          content: '✅ Opened!',
+        operations.push(
+          statusChannel.setName('🟢-OPEN-🟢'),
+          orderChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true })
+        );
+        
+        // Execute all operations in parallel and wait for completion
+        await Promise.all(operations);
+        
+        return interaction.reply({
+          content: '✅ Store opened! Channel visibility updated.',
           ephemeral: true
         });
       } else {
-        await statusChannel.setName('🔴-CLOSED-🔴');
-        await orderChannel.permissionOverwrites.edit(interaction.guild.id, {
-          ViewChannel: false
-        });
-        await interaction.followUp({
-          content: '✅ Closed!',
+        operations.push(
+          statusChannel.setName('🔴-CLOSED-🔴'),
+          orderChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false })
+        );
+        
+        // Execute all operations in parallel and wait for completion
+        await Promise.all(operations);
+        
+        return interaction.reply({
+          content: '✅ Store closed! Channel visibility updated.',
           ephemeral: true
         });
       }
     } catch (error) {
       console.error('Store command error:', error);
-      await interaction.followUp({
+      return interaction.reply({
         content: `❌ Error: ${error.message}`,
         ephemeral: true
       }).catch(console.error);
