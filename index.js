@@ -733,25 +733,42 @@ async function fetchBuffer(url) {
 }
 
 async function createWatermark(imageBuffer, watermarkText) {
-  const img = sharp(imageBuffer);
-  const meta = await img.metadata();
-  const width = meta.width || 512;
-  const height = meta.height || 512;
+  try {
+    console.log('🔍 Starting watermark creation...');
+    const img = sharp(imageBuffer);
+    const meta = await img.metadata();
+    console.log('📐 Image metadata:', { width: meta.width, height: meta.height });
+    
+    const width = meta.width || 512;
+    const height = meta.height || 512;
+    
+    // Single massive centered text watermark
+    const base = Math.min(width, height);
+    const fontSize = Math.max(Math.round(base * 0.5), 150); // 50% of smaller side, min 150px
+    console.log('📝 Watermark settings:', { base, fontSize, watermarkText });
 
-  // Single massive centered text watermark
-  const base = Math.min(width, height);
-  const fontSize = Math.max(Math.round(base * 0.5), 150); // 50% of smaller side, min 150px
-
-  const svg = `
-    <svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'>
-      <text x='50%' y='50%' text-anchor='middle' dominant-baseline='middle'
-            font-family='sans-serif' font-size='${fontSize}px'
-            fill='#FFA500' fill-opacity='0.15'
-            transform='rotate(-25 ${width/2} ${height/2})'>${watermarkText}</text>
-    </svg>`;
-
-  const result = await img.composite([{ input: Buffer.from(svg), blend:'over' }]).toBuffer();
-  return result;
+    const svg = `
+      <svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'>
+        <text x='50%' y='50%' text-anchor='middle' dominant-baseline='middle'
+              font-family='Arial Black, sans-serif' font-size='${fontSize}px'
+              fill='#FFA500' fill-opacity='0.35'
+              transform='rotate(-25 ${width/2} ${height/2})'>${watermarkText}</text>
+      </svg>`;
+    
+    console.log('🎨 SVG created, length:', svg.length);
+    
+    const result = await img
+      .composite([{ input: Buffer.from(svg), blend: 'over' }])
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    
+    console.log('✅ Watermark created successfully, result size:', result.length);
+    return result;
+  } catch (error) {
+    console.error('❌ Watermark creation failed:', error);
+    console.log('🔄 Returning original image as fallback');
+    return imageBuffer;
+  }
 }
 
 // Log the token being used (but hide most of it)
