@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Events, EmbedBuilder, PermissionFlagsBits, AttachmentBuilder, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Events, EmbedBuilder, PermissionFlagsBits, AttachmentBuilder } = require('discord.js');
 const storage = require('./storage.js');
 const sharp = require('sharp');
 require('dotenv').config();
@@ -8,13 +8,6 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences,
-  ],
-  partials: [
-    Partials.Channel,
-    Partials.Message,
-    Partials.GuildMember,
   ]
 });
 
